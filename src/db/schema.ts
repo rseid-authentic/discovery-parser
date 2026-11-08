@@ -21,12 +21,12 @@ export const evalStatus = pgEnum("eval_status", [
   "schema_violation",
 ]);
 
-/** One row per uploaded original. The PDF itself lives in R2 under `storage_key`. */
+/** One row per uploaded original. The PDF itself lives in Blob under `storage_key`. */
 export const documents = pgTable("documents", {
   id: uuid("id").primaryKey().defaultRandom(),
   filename: text("filename").notNull(),
   storageKey: text("storage_key").notNull(), // docs/<sha256>.pdf
-  publicUrl: text("public_url"), // null until uploaded to R2 (eval CLI may insert first)
+  publicUrl: text("public_url"), // null until uploaded to Blob (eval CLI may insert first)
   mime: text("mime").notNull().default("application/pdf"),
   bytes: integer("bytes").notNull(),
   sha256: text("sha256").notNull().unique(),

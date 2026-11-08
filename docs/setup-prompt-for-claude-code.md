@@ -24,4 +24,4 @@ I'm in `~/Documents/code/personal/discovery-parser`, a freshly scaffolded Next.j
 
 8. **Report back:** repo URL, Vercel URL, which steps I still need to do manually, and anything in the code you had to change to make the real services work (so I can review the diff).
 
-Do not add new dependencies, abstractions, or v1 features (queue, worker, cascade) during this. Scope is strictly: make v0 run against real services.
+Do not add new abstractions or v1 features (queue, worker, cascade) during this. Scope is strictly: make v0 run against real services.

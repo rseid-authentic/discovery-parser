@@ -1,0 +1,4 @@
+.env*
+plans/
+data/samples/*.zip
+data/samples/private/

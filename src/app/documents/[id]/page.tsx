@@ -82,7 +82,7 @@ async function DocumentView({ params }: { params: Promise<{ id: string }> }) {
             />
           ) : (
             <p className="p-3 text-sm text-neutral-500">
-              No public URL (not uploaded to R2). Run <code>pnpm samples:upload</code>.
+              No public URL (not uploaded to Blob). Run <code>pnpm samples:upload</code>.
             </p>
           )}
         </section>

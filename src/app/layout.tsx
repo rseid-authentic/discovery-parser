@@ -16,7 +16,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/" className="font-semibold">
               discovery-parser
             </Link>
-            <span className="text-neutral-500">v0 · upload → R2 → extract → view</span>
+            <span className="text-neutral-500">v0 · upload → Blob → extract → view</span>
           </nav>
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>

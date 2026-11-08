@@ -14,10 +14,10 @@ Build a small, honest document parser for antitrust-discovery material that turn
 
 ## v0 scope and definition-of-done
 
-Upload PDF -> R2 -> text-layer detect -> route -> OpenRouter -> Zod envelope -> Neon -> viewer; eval CLI over ~25 labelled docs.
+Upload PDF -> Vercel Blob -> text-layer detect -> route -> OpenRouter -> Zod envelope -> Neon -> viewer; eval CLI over ~25 labelled docs.
 
 - [ ] `pnpm typecheck`, `lint`, `test`, `build` pass with no `.env.local`
-- [ ] Upload route stores PDF in R2 under a content-hashed key and records the `documents` row
+- [ ] Upload route stores PDF in Blob under a content-hashed key and records the `documents` row
 - [ ] Parse produces a schema-valid envelope or a recorded `schema_violation` run
 - [ ] Viewer page shows envelope fields with confidence/page/source_text and the CDN-hosted PDF
 - [ ] Runs page lists every `extraction_runs` row with model, mode, tokens, cost, latency
@@ -38,7 +38,7 @@ Doc-type sub-schemas (email, financial statement, memo), Concordance/DAT export 
 ## Architecture
 
 ```
-browser --PDF--> /api/upload --sha256--> R2 (docs/<sha256>.pdf) --> CDN
+browser --PDF--> /api/upload --sha256--> Blob (docs/<sha256>.pdf) --> CDN
                      |                                              ^
                      v                                              |
               documents row (Neon)                     viewer <-----+
@@ -92,17 +92,17 @@ Field list is a draft — owner finalizes before labelling.
 ## CDN learning goals
 
 - Content-hashed keys (`docs/<sha256>.pdf`) so objects are immutable.
-- Upload with `Cache-Control: public, max-age=31536000, immutable`.
-- Observe `cf-cache-status` (MISS then HIT) with curl and record it in the README.
+- Configure a one-year cache max age for content-hashed blobs.
+- Inspect Vercel Blob response and cache headers with repeated requests and record observed behavior in the README.
 - Signed URLs for private documents: later, not v0.
 
 ## Budget
 
-$20-50 total. Rough plan: <= $5 for development calls, <= $15 for eval sweeps (25 docs x 3-5 models, cheap tiers), remainder reserve for one frontier-model comparison. Neon/R2/Vercel on free tiers. Prices in `src/lib/models.ts` need re-verifying.
+$20-50 total. Rough plan: <= $5 for development calls, <= $15 for eval sweeps (25 docs x 3-5 models, cheap tiers), remainder reserve for one frontier-model comparison. Neon and Vercel on free tiers. Prices in `src/lib/models.ts` need re-verifying.
 
 ## 2-week plan (6 sittings)
 
-1. Env + accounts (OpenRouter, Neon, R2), `db:push`, upload route to R2, CDN headers check.
+1. Env + accounts (OpenRouter, Neon, Vercel Blob), `db:push`, upload route, CDN headers check.
 2. Collect ~25 public samples, `samples:upload`, finalize envelope field list and critical fields.
 3. Run `eval:bootstrap`, hand-correct labels into `<name>.json`.
 4. First `pnpm eval` sweep, fix scorers/prompt, viewer + runs pages.

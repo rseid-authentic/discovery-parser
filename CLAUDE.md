@@ -1,6 +1,6 @@
 # discovery-parser
 
-AI parser for antitrust-discovery documents (emails, memos, financial statements, scans). v0: upload PDF -> R2 (CDN) -> text-layer detect -> OpenRouter model (text or native PDF) -> Zod "envelope" with per-field provenance -> Neon Postgres -> viewer page, plus an eval CLI scoring per-field accuracy, omitted/invented rates, tokens, cost and latency per model against hand-labelled ground truth. Solo resume project. `SPEC.md` is authoritative on scope; don't start v1 work before the v0 definition-of-done is met.
+AI parser for antitrust-discovery documents (emails, memos, financial statements, scans). v0: upload PDF -> Vercel Blob (CDN) -> text-layer detect -> OpenRouter model (text or native PDF) -> Zod "envelope" with per-field provenance -> Neon Postgres -> viewer page, plus an eval CLI scoring per-field accuracy, omitted/invented rates, tokens, cost and latency per model against hand-labelled ground truth. Solo resume project. `SPEC.md` is authoritative on scope; don't start v1 work before the v0 definition-of-done is met.
 
 ## Commands
 
@@ -14,7 +14,7 @@ AI parser for antitrust-discovery documents (emails, memos, financial statements
 | Unit tests | `pnpm test` |
 | Eval | `pnpm eval --models <ids> [--mode auto\|text\|pdf] [--engine ...] [--docs 'glob'] [--name n]` |
 | Draft labels | `pnpm eval:bootstrap` |
-| Upload samples to R2 | `pnpm samples:upload` |
+| Upload samples to Blob | `pnpm samples:upload` |
 | Drizzle migrations | `pnpm db:generate` / `pnpm db:push` / `pnpm db:studio` |
 
 ## Directory map
@@ -24,7 +24,7 @@ AI parser for antitrust-discovery documents (emails, memos, financial statements
 - `src/lib/parse/` text-layer detection, routing, prompts, `extractEnvelope`
 - `src/lib/eval/` per-field scorers, scoring, report
 - `src/lib/{env,models,openrouter}.ts` lazy env, model registry/prices, provider
-- `src/lib/storage/r2.ts` R2 client; `src/db/` Drizzle schema + lazy client
+- `src/lib/storage/blob.ts` Blob client; `src/db/` Drizzle schema + lazy client
 - `scripts/` eval, bootstrap-labels, upload-samples (+ `scripts/lib/`)
 - `data/samples/` public PDFs; `data/ground-truth/` labels; `docs/adr/` decisions
 

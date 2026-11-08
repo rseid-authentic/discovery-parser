@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { documentKey, sha256Hex } from "@/lib/storage/r2";
+import { documentKey, sha256Hex } from "@/lib/storage/blob";
 import { analyzeTextLayer } from "@/lib/parse/text-layer";
 
 /**
  * Ensures a `documents` row exists for a sample PDF and returns it.
- * `public_url` stays null until `pnpm samples:upload` pushes the file to R2.
+ * `public_url` stays null until `pnpm samples:upload` pushes the file to Blob.
  */
 export async function ensureDocument(filename: string, bytes: Uint8Array) {
   const sha = sha256Hex(bytes);

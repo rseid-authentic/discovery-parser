@@ -11,7 +11,7 @@ export default function HomePage() {
       <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
         <h1 className="text-lg font-semibold">Upload a PDF</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          Stored in R2, text layer detected, parsed synchronously (v0), then shown beside the original.
+          Stored in Vercel Blob, text layer detected, parsed synchronously (v0), then shown beside the original. PDFs must be 4 MB or smaller.
         </p>
         {/* Plain multipart POST to the route handler; no client JS needed in v0. */}
         <form

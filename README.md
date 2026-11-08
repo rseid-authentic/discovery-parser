@@ -1,6 +1,6 @@
 # discovery-parser
 
-AI parser for antitrust-discovery documents. Upload a PDF, store it on R2 behind a CDN, detect the text layer, extract a Zod-validated "envelope" (every field with confidence, page and source text) via OpenRouter, save to Neon Postgres, and view it. An eval CLI scores models per field against hand-labelled ground truth and reports accuracy, omitted/invented rates, tokens, cost and latency.
+AI parser for antitrust-discovery documents. Upload a PDF, store it on Vercel Blob behind a CDN, detect the text layer, extract a Zod-validated "envelope" (every field with confidence, page and source text) via OpenRouter, save to Neon Postgres, and view it. An eval CLI scores models per field against hand-labelled ground truth and reports accuracy, omitted/invented rates, tokens, cost and latency.
 
 Status: v0 in progress. Scope, plan and definition-of-done are in [SPEC.md](SPEC.md); decisions in [docs/adr/](docs/adr/).
 
@@ -10,7 +10,7 @@ Requires Node >= 22 and pnpm.
 
 ```bash
 pnpm install
-cp .env.example .env.local   # fill in OpenRouter, Neon, R2 values
+cp .env.example .env.local   # fill in OpenRouter, Neon, Blob values
 pnpm db:push                 # create tables in Neon
 pnpm dev                     # http://localhost:3000
 ```
@@ -21,7 +21,7 @@ pnpm dev                     # http://localhost:3000
 
 1. Put public sample PDFs in `data/samples/` (private ones go in the gitignored `data/samples/private/`).
 2. `pnpm eval:bootstrap` writes `data/ground-truth/<name>.draft.json`; hand-correct and save as `<name>.json` (see `data/ground-truth/README.md`).
-3. `pnpm samples:upload` pushes samples to R2.
+3. `pnpm samples:upload` pushes samples to Blob.
 4. Run:
 
 ```bash
@@ -37,7 +37,7 @@ Reports land in `reports/` (gitignored) and in the `eval_runs`/`eval_results` ta
 
 ## Environment
 
-See `.env.example`. OpenRouter vars are needed for parsing/eval, `DATABASE_URL` for anything touching the DB, R2 vars only for upload and `samples:upload`.
+See `.env.example`. OpenRouter vars are needed for parsing/eval, `DATABASE_URL` for anything touching the DB, and `BLOB_READ_WRITE_TOKEN` for uploads and `samples:upload`. Browser uploads are limited to 4 MB so they fit within Vercel's function request limit; the sample CLI uploads directly to Blob.
 
 ## Results
 

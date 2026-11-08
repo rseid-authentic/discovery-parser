@@ -30,6 +30,16 @@ export type ModelInfo = {
 
 export const MODELS: readonly ModelInfo[] = [
   {
+    id: "openai/gpt-6-luna",
+    label: "GPT-6 Luna",
+    vision: true,
+    nativePdf: true,
+    tier: "cheap",
+    priceInPerM: 0.1,
+    priceOutPerM: 0.5,
+    notes: "Default text + vision model; ZDR text and native PDF extraction verified 2026-11-08.",
+  },
+  {
     id: "google/gemini-2.5-flash-lite",
     label: "Gemini 2.5 Flash-Lite",
     vision: true,
@@ -37,7 +47,7 @@ export const MODELS: readonly ModelInfo[] = [
     tier: "cheap",
     priceInPerM: 0.1,
     priceOutPerM: 0.4,
-    notes: "Default text + vision model. Verified 2026-11-08.",
+    notes: "Pricing verified 2026-11-08; unavailable under this account's ZDR policy.",
   },
   {
     id: "google/gemini-3-flash-preview",

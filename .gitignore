@@ -44,3 +44,6 @@ next-env.d.ts
 # project
 /reports/
 data/samples/private/
+data/samples/*.zip
+.neon
+.env*

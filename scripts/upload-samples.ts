@@ -3,11 +3,11 @@ import { parseArgs } from "node:util";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { analyzeTextLayer } from "@/lib/parse/text-layer";
-import { documentKey, objectExists, publicUrl, putObject, sha256Hex } from "@/lib/storage/r2";
+import { documentKey, putObject, sha256Hex } from "@/lib/storage/blob";
 import { loadSamples } from "./lib/samples";
 
 /**
- * Pushes data/samples/*.pdf to R2 under content-hashed keys and upserts `documents`.
+ * Pushes data/samples/*.pdf to Blob under content-hashed keys and upserts `documents`.
  * Safe to re-run: existing objects are skipped, rows are updated in place.
  *
  * Usage: pnpm samples:upload [--docs 'UPX*.pdf']
@@ -19,11 +19,7 @@ console.log(`Uploading ${samples.length} sample(s)`);
 for (const sample of samples) {
   const sha = sha256Hex(sample.bytes);
   const key = documentKey(sha);
-  const exists = await objectExists(key);
-  if (!exists) {
-    await putObject({ key, body: sample.bytes, contentType: "application/pdf" });
-  }
-  const url = publicUrl(key);
+  const { url, exists } = await putObject({ key, body: sample.bytes, contentType: "application/pdf" });
   const tl = await analyzeTextLayer(sample.bytes);
 
   const existing = await db().query.documents.findFirst({ where: eq(schema.documents.sha256, sha) });
@@ -46,4 +42,4 @@ for (const sample of samples) {
   }
   console.log(`${exists ? "exists " : "uploaded"} ${sample.name} -> ${url} (${tl.pageCount}p, text=${tl.hasTextLayer})`);
 }
-console.log("Done. Check `cf-cache-status` on a second fetch of any URL to see the CDN hit.");
+console.log("Done. Check response cache headers on a second fetch of a public Blob URL.");

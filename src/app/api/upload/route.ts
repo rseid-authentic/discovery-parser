@@ -1,15 +1,15 @@
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { runRoute } from "@/lib/parse/route";
-import { documentKey, putObject, sha256Hex } from "@/lib/storage/r2";
+import { documentKey, putObject, sha256Hex } from "@/lib/storage/blob";
 
 export const maxDuration = 300; // seconds; Vercel function limit for the synchronous v0 parse
 
-const MAX_BYTES = 25 * 1024 * 1024;
+const MAX_BYTES = 4 * 1024 * 1024;
 
 /**
  * v0 ingest, fully synchronous:
- *   multipart -> sha256 -> R2 (immutable, content-addressed) -> documents row
+ *   multipart -> sha256 -> Blob (content-addressed) -> documents row
  *   -> text-layer detection + routed extraction -> extraction_runs row -> update status
  *   -> 303 redirect to the viewer.
  *
@@ -18,7 +18,12 @@ const MAX_BYTES = 25 * 1024 * 1024;
  * runRoute() and writes the extraction_run. See SPEC.md "v1".
  */
 export async function POST(request: Request) {
-  const form = await request.formData();
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return Response.json({ error: "expected multipart form data with a PDF file" }, { status: 400 });
+  }
   const file = form.get("file");
   if (!(file instanceof File)) {
     return Response.json({ error: "missing `file` field" }, { status: 400 });
