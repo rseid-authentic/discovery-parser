@@ -1,0 +1,18 @@
+{
+  "_meta": { "notes": "Illustrative example only; no matching sample PDF.", "source_url": "https://example.com/exhibit" },
+  "doc_type": { "value": "email", "page": 1, "source_text": "From: Jane Roe" },
+  "title_or_subject": { "value": "Q3 pricing discussion", "page": 1, "source_text": "Subject: Q3 pricing discussion" },
+  "doc_date": { "value": "2019-08-14", "page": 1, "source_text": "Sent: Wednesday, August 14, 2019" },
+  "author_from": { "value": "Jane Roe <jane.roe@example.com>", "page": 1 },
+  "recipients_to": [{ "value": "John Doe <john.doe@example.com>", "page": 1 }],
+  "cc": [],
+  "organizations": [{ "value": "Example Corp" }],
+  "people": [{ "value": "Jane Roe" }, { "value": "John Doe" }],
+  "bates_begin": { "value": "EX-0000123", "page": 1 },
+  "bates_end": { "value": "EX-0000124", "page": 2 },
+  "page_count": { "value": 2 },
+  "has_privilege_legend": { "value": false },
+  "has_redactions": { "value": false },
+  "language": { "value": "en" },
+  "summary": "Jane asks John to review Q3 pricing before the partner call."
+}
