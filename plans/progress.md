@@ -33,6 +33,13 @@
 - At that time, live services and model details were not yet verified; see subsequent session notes.
 
 ## Session Notes
+### 2026-11-08 — Synthetic pilot
+- Owner confirmed `test 2.zip` is synthetic; it remains excluded from Git and deployment. It contains 19 PDFs in `test/images/` plus native/text/load-file material.
+- Ran three selected PDFs through the local upload route: a synthetic email (1 page, $0.00059032), chat transcript (1 page, $0.00068744), and test-set generator code (5 pages, $0.00160157). All had text layers and produced schema-valid outputs; total reported pilot cost $0.00287933. These are not scan tests or a scored evaluation.
+- Chat extraction included an assistant label and an ambiguous `x` label in `people`; the code PDF illustrates that this corpus contains generator artifacts as well as simulated corporate records. Field definitions and human labels remain to be discussed.
+- Inspected `invoice-eval`'s reusable `AnnotationForm`: navigation, pass/fail judgments, comments, and autosave are useful patterns, but its judgment schema does not itself produce corrected discovery ground-truth envelopes.
+- Added a compact Review tab to parsed-document pages. Edits and progress stay in the current browser; after every field is reviewed, the user downloads a schema-validated label for `data/ground-truth/`. The matching PDF must also be in `data/samples/`. No public server-side write endpoint was added.
+
 ### 2026-11-08 — Neon setup
 - Private GitHub repository is `rseid-authentic/discovery-parser`; initial scaffold commit pushed to `main`.
 - Linked Neon project `discovery-parser`, branch `production`; `neon deploy` reported no policy changes and pulled local environment variables.

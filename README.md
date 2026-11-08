@@ -31,6 +31,12 @@ pnpm eval --models qwen/qwen3-vl-8b-instruct --mode pdf --engine mistral-ocr --d
 
 Reports land in `reports/` (gitignored) and in the `eval_runs`/`eval_results` tables.
 
+## Review labels
+
+Open a parsed document and select **Review** beside **Extraction**. Check and correct each field against the PDF, then mark it reviewed. Source details can be expanded when needed. The field list is still a draft; a privilege legend is only a signal, not a legal determination.
+
+Progress is saved in the current browser, not on the server or across devices. Once every field is reviewed, download the label and place it in `data/ground-truth/`. The matching PDF must be in `data/samples/` with the same base name for `pnpm eval` to pick it up. The downloaded label contains human-reviewed values, not the model's confidence scores.
+
 ## Scripts
 
 `dev`, `build`, `start`, `lint`, `format`, `format:check`, `typecheck`, `test`, `eval`, `eval:bootstrap`, `samples:upload`, `db:generate`, `db:push`, `db:studio`.

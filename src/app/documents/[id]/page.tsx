@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { desc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { StatusBadge } from "@/components/status-badge";
+import { ReviewTabs } from "@/components/ground-truth-review";
 import { EnvelopeSchema, type Envelope, type Field } from "@/lib/schema/envelope";
 
 export default function DocumentPage({ params }: PageProps<"/documents/[id]">) {
@@ -57,7 +58,7 @@ async function DocumentView({ params }: { params: Promise<{ id: string }> }) {
           highlight each field's bbox on click (needs bbox in Field<T>). */}
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
-          <h2 className="mb-2 text-sm font-semibold">Extracted envelope</h2>
+          {!envelope && <h2 className="mb-2 text-sm font-semibold">Extracted envelope</h2>}
           {!run && <p className="text-sm text-neutral-500">No extraction run yet.</p>}
           {run && !envelope && (
             <div className="space-y-2 text-sm">
@@ -70,7 +71,9 @@ async function DocumentView({ params }: { params: Promise<{ id: string }> }) {
               )}
             </div>
           )}
-          {envelope && <EnvelopeFields envelope={envelope} />}
+          {envelope && run && <ReviewTabs key={run.id} documentId={doc.id} runId={run.id} filename={doc.filename} envelope={envelope}>
+            <EnvelopeFields envelope={envelope} />
+          </ReviewTabs>}
         </section>
 
         <section className="rounded-lg border border-neutral-200 dark:border-neutral-800">
