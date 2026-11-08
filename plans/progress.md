@@ -33,6 +33,12 @@
 - At that time, live services and model details were not yet verified; see subsequent session notes.
 
 ## Session Notes
+### 2026-11-08 — UCSF and Kleister pilot
+- Ran three UCSF litigation PDFs (`ffbb0002`, `ffbb0006`, `ffbb0005`) and the three Kleister NDA PDFs from `/Users/marshall/Documents/document-parser-samples/manifest.csv` through GPT-6 Luna sequentially, with no schema-repair retries. All six were schema-valid; reported total cost was $0.007668765.
+- All six were routed through extracted text, including the noisy OCR case; this was not a scan/PDF-route test. Results were saved under `/private/tmp/discovery-parser-six-pilot-20261108/` and source PDFs were not uploaded to public Blob. They are not human-scored ground truth.
+- `ffbb0002`'s extracted `FROM:` field is blank while the model selected an author; human review is needed before judging it. NDA party labels and our broader `organizations` field have different semantics and cannot be compared as identical sets.
+- A delegated review-UI cleanup improved long-value wrapping, compact responsive rows, progress feedback, and export guidance without changing browser-local persistence or the evaluator label schema. Typecheck, lint, 18 tests, and build passed; this latest visual revision was not rechecked in a browser.
+
 ### 2026-11-08 — Synthetic pilot
 - Owner confirmed `test 2.zip` is synthetic; it remains excluded from Git and deployment. It contains 19 PDFs in `test/images/` plus native/text/load-file material.
 - Ran three selected PDFs through the local upload route: a synthetic email (1 page, $0.00059032), chat transcript (1 page, $0.00068744), and test-set generator code (5 pages, $0.00160157). All had text layers and produced schema-valid outputs; total reported pilot cost $0.00287933. These are not scan tests or a scored evaluation.

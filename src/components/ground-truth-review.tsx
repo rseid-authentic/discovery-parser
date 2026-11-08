@@ -117,6 +117,7 @@ export function GroundTruthReview({ documentId, runId, filename, envelope }: {
   const [loaded, setLoaded] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "unavailable">("saved");
   const [error, setError] = useState("");
+  const [exported, setExported] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -139,6 +140,7 @@ export function GroundTruthReview({ documentId, runId, filename, envelope }: {
   function update(key: FieldKey, changes: Partial<ReviewField>) {
     setReview((current) => ({ ...current, [key]: { ...current[key], ...changes } }));
     setError("");
+    setExported(false);
   }
 
   function updateValue(key: FieldKey, value: string) {
@@ -164,6 +166,7 @@ export function GroundTruthReview({ documentId, runId, filename, envelope }: {
       link.click();
       URL.revokeObjectURL(url);
       setError("");
+      setExported(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invalid review values.");
     }
@@ -173,42 +176,55 @@ export function GroundTruthReview({ documentId, runId, filename, envelope }: {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="font-semibold">Review for evaluation</h3>
-          <p className="text-xs text-neutral-500">{reviewed} of {FIELDS.length} fields reviewed · {saveState === "saved" ? "progress saved in this browser" : "browser storage unavailable; progress will not persist"}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-36 flex-1 space-y-1.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="font-semibold">Review fields</h3>
+            <span className="text-xs tabular-nums text-neutral-500">{reviewed} / {FIELDS.length} reviewed</span>
+          </div>
+          <progress aria-label="Fields reviewed" value={reviewed} max={FIELDS.length} className="block h-1.5 w-full accent-emerald-600" />
+          <p aria-live="polite" className="text-xs text-neutral-500">{saveState === "saved" ? "Progress saved in this browser" : "Browser storage unavailable; progress will not persist"}</p>
         </div>
-        <button type="button" onClick={exportLabel} className="rounded bg-neutral-900 px-3 py-2 text-sm text-white dark:bg-neutral-100 dark:text-neutral-900">Download reviewed label</button>
+        <button type="button" onClick={exportLabel} aria-describedby="review-export-help" className="rounded bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300">Download label</button>
       </div>
-      <p className="text-xs text-neutral-500">Correct each value against the PDF, then check it off. Leave unknown values blank. The field list is still a draft.</p>
-      <p className="text-xs text-neutral-500">Save the downloaded <code>{sampleName}.json</code> in <code>data/ground-truth/</code>; the matching <code>{sampleName}.pdf</code> must be in <code>data/samples/</code>. Progress stays in this browser until export.</p>
+      <p id="review-export-help" className="text-sm text-neutral-600 dark:text-neutral-400">Check each value against the PDF, correct it if needed, then mark it reviewed. Leave unknown values blank.</p>
+      <details className="text-xs text-neutral-500">
+        <summary className="cursor-pointer hover:text-neutral-800 dark:hover:text-neutral-200">How to use the reviewed label</summary>
+        <p className="mt-2">After all fields are reviewed, download <code>{sampleName}.json</code> to <code>data/ground-truth/</code>. The matching <code>{sampleName}.pdf</code> must be in <code>data/samples/</code> for evaluation. Progress is stored only in this browser; the field list is still a draft.</p>
+      </details>
       {error && <p role="alert" className="whitespace-pre-wrap rounded border border-red-300 p-2 text-sm text-red-700 dark:text-red-300">{error}</p>}
+      {exported && <p role="status" className="rounded border border-emerald-300 p-2 text-sm text-emerald-800 dark:text-emerald-300">Download started for {sampleName}.json. Move it to data/ground-truth/ for evaluation.</p>}
       <div className="divide-y divide-neutral-200 rounded border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
         {FIELDS.map(({ key, label, kind, help }) => {
           const item = review[key];
           const common = "w-full rounded border border-neutral-300 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700";
           return (
-            <div key={key} className="px-3 py-2">
-              <div className="grid items-start gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto] sm:items-center">
+            <div key={key} className={`px-3 py-2.5 ${item.reviewed ? "bg-emerald-50/60 dark:bg-emerald-950/20" : ""}`}>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)_auto] sm:items-center">
                 <label htmlFor={`review-${key}`} className="text-sm font-medium" title={help}>{label}</label>
+                <label className="col-start-2 row-start-1 flex items-center gap-1.5 whitespace-nowrap text-xs sm:col-start-3"><input type="checkbox" aria-label={`Mark ${label} reviewed`} checked={item.reviewed} onChange={(event) => update(key, { reviewed: event.target.checked })} /> Reviewed</label>
+                <div className="col-span-2 min-w-0 sm:col-span-1 sm:col-start-2 sm:row-start-1">
                 {kind === "list" ? (
-                  <textarea id={`review-${key}`} aria-describedby={`help-${key}`} className={`${common} min-h-9 resize-y`} rows={1} placeholder="One value per line" value={item.value} onChange={(event) => updateValue(key, event.target.value)} />
+                  <textarea id={`review-${key}`} aria-describedby={`help-${key}`} className={`${common} block min-h-10 resize-y [field-sizing:content] [overflow-wrap:anywhere]`} rows={2} placeholder="None / unknown" value={item.value} onChange={(event) => updateValue(key, event.target.value)} />
                 ) : kind === "type" || kind === "boolean" ? (
                   <select id={`review-${key}`} className={common} value={item.value} onChange={(event) => updateValue(key, event.target.value)}>
-                    <option value="">Unknown / not present</option>
+                    <option value="">Unknown</option>
                     {kind === "type" ? DOC_TYPES.map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>) : <><option value="true">Yes</option><option value="false">No</option></>}
                   </select>
+                ) : kind === "text" ? (
+                  <textarea id={`review-${key}`} className={`${common} block min-h-9 resize-y [field-sizing:content] [overflow-wrap:anywhere]`} rows={1} placeholder="Unknown / not present" value={item.value} onChange={(event) => updateValue(key, event.target.value)} />
                 ) : (
-                  <input id={`review-${key}`} type={kind === "number" ? "number" : kind === "date" ? "date" : "text"} min={kind === "number" ? 1 : undefined} className={common} value={item.value} onChange={(event) => updateValue(key, event.target.value)} />
+                  <input id={`review-${key}`} type={kind === "number" ? "number" : "date"} min={kind === "number" ? 1 : undefined} className={common} value={item.value} onChange={(event) => updateValue(key, event.target.value)} />
                 )}
-                <label className="flex items-center gap-1.5 whitespace-nowrap text-xs"><input type="checkbox" aria-label={`Mark ${label} reviewed`} checked={item.reviewed} onChange={(event) => update(key, { reviewed: event.target.checked })} /> Reviewed</label>
+                </div>
               </div>
-              {kind === "list" ? <p id={`help-${key}`} className="mt-1 text-xs text-neutral-500 sm:pl-42">One value per line.</p> : <details className="mt-1 text-xs text-neutral-500 sm:pl-42">
+              {kind === "list" ? <p id={`help-${key}`} className="mt-1 text-xs text-neutral-500 sm:pl-39">One value per line.</p> : <details className="mt-1 text-xs text-neutral-500 sm:pl-39">
                 <summary className="cursor-pointer">Source details{item.page ? ` · p.${item.page}` : ""}</summary>
+                <p className="mt-1">Model-suggested evidence—check it against the PDF.</p>
                 {help && <p className="mt-1">{help}</p>}
                 <div className="mt-2 grid gap-2 sm:grid-cols-[6rem_1fr]">
                   <label>Page<input aria-label={`${label} source page`} type="number" min={1} className={common} value={item.page} onChange={(event) => update(key, { page: event.target.value, reviewed: false })} /></label>
-                  <label>Supporting text<input aria-label={`${label} supporting text`} className={common} value={item.source} onChange={(event) => update(key, { source: event.target.value, reviewed: false })} /></label>
+                  <label>Supporting text<textarea aria-label={`${label} supporting text`} className={`${common} block min-h-10 resize-y [field-sizing:content] [overflow-wrap:anywhere]`} rows={2} value={item.source} onChange={(event) => update(key, { source: event.target.value, reviewed: false })} /></label>
                 </div>
               </details>}
             </div>
