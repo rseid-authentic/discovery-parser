@@ -27,6 +27,7 @@ AI parser for antitrust-discovery documents (emails, memos, financial statements
 - `src/lib/storage/blob.ts` Blob client; `src/db/` Drizzle schema + lazy client
 - `scripts/` eval, bootstrap-labels, upload-samples (+ `scripts/lib/`)
 - `data/samples/` public PDFs; `data/ground-truth/` labels; `docs/adr/` decisions
+- `plans/` working docs: `task_plan.md` (phases + checkboxes), `findings.md` (research, decisions, resolved questions), `progress.md` (status + session notes). Read all three at session start; update `progress.md` at session end.
 
 ## Stack
 
