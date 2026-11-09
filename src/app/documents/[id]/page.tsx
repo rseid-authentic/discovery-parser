@@ -6,7 +6,9 @@ import { desc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { StatusBadge } from "@/components/status-badge";
 import { ReviewTabs } from "@/components/ground-truth-review";
-import { EnvelopeSchema, type Envelope, type Field } from "@/lib/schema/envelope";
+import { EnvelopeSchema, ExtractedTextSchema, GroundTruthEnvelopeSchema, type Envelope, type Field } from "@/lib/schema/envelope";
+import { routeLabel } from "@/lib/parse/route-label";
+import { selectRun } from "@/lib/parse/select-run";
 
 export default function DocumentPage({ params }: PageProps<"/documents/[id]">) {
   return (
@@ -24,13 +26,19 @@ async function DocumentView({ params }: { params: Promise<{ id: string }> }) {
   const doc = await db().query.documents.findFirst({ where: eq(schema.documents.id, id) });
   if (!doc) notFound();
 
-  const run = await db().query.extractionRuns.findFirst({
+  const runs = await db().query.extractionRuns.findMany({
     where: eq(schema.extractionRuns.documentId, id),
-    orderBy: desc(schema.extractionRuns.createdAt),
+    orderBy: [desc(schema.extractionRuns.createdAt), desc(schema.extractionRuns.id)],
   });
+  const run = selectRun(runs);
+  const latest = runs[0];
 
   const parsed = run?.schemaValid ? EnvelopeSchema.safeParse(run.output) : null;
   const envelope: Envelope | null = parsed?.success ? parsed.data : null;
+  const failedText = run && !envelope && run.output && typeof run.output === "object" && "extracted_text" in run.output ? ExtractedTextSchema.safeParse(run.output.extracted_text) : null;
+  const draftRow = await db().query.groundTruth.findFirst({ where: eq(schema.groundTruth.documentId, id) });
+  const draftResult = draftRow ? GroundTruthEnvelopeSchema.safeParse(draftRow.envelope) : null;
+  const draft = draftResult?.success && draftResult.data._meta?.draft === true ? draftResult.data : null;
 
   return (
     <div className="space-y-4">
@@ -47,11 +55,15 @@ async function DocumentView({ params }: { params: Promise<{ id: string }> }) {
 
       {run && (
         <p className="text-xs text-neutral-500">
-          <span className="font-mono">{run.model}</span> · {run.inputMode}
-          {run.pdfEngine ? `/${run.pdfEngine}` : ""} · prompt {run.promptVersion} · {run.latencyMs ?? "?"} ms ·{" "}
+          Displayed run <span className="font-mono">{run.id}</span> · <span className="font-mono">{run.model}</span> · {routeLabel(run)} · prompt {run.promptVersion} · {run.latencyMs ?? "?"} ms ·{" "}
           {run.costUsd ? `$${Number(run.costUsd).toFixed(4)}` : "cost n/a"} · {run.inputTokens ?? "?"} in /{" "}
           {run.outputTokens ?? "?"} out tokens
         </p>
+      )}
+      {latest && run && latest.id !== run.id && <p className="rounded border border-amber-300 p-2 text-sm dark:border-amber-700">The latest run did not produce a usable extraction. Showing the earlier successful run. {latest.error ?? "See all runs for details."}</p>}
+
+      {draft?._meta?.source_url === "https://huggingface.co/datasets/jsdnrs/ICDAR2019-SROIE" && (
+        <p className="text-xs text-neutral-500">Source: <a className="underline" href={draft._meta.source_url}>SROIE (Huang et al.), jsdnrs edition</a>, <a className="underline" href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Original JPEG converted to a PDF.</p>
       )}
 
       {/* Two panes: fields left, original PDF right. v2: replace the iframe with pdf.js and
@@ -63,6 +75,8 @@ async function DocumentView({ params }: { params: Promise<{ id: string }> }) {
           {run && !envelope && (
             <div className="space-y-2 text-sm">
               <p className="text-red-700">Extraction did not produce a schema-valid envelope.</p>
+              {failedText?.success && <><p className="text-neutral-500">Document text was recovered despite the failed field extraction. It may contain errors.</p><pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded bg-neutral-100 p-2 dark:bg-neutral-900">{failedText.data.text}</pre></>}
+              <a href={`/api/documents/${doc.id}/export?runId=${run.id}`} className="underline">Open machine-readable JSON</a>
               {run.error && <pre className="whitespace-pre-wrap rounded bg-neutral-100 p-2 text-xs dark:bg-neutral-900">{run.error}</pre>}
               {run.output != null && (
                 <pre className="max-h-96 overflow-auto rounded bg-neutral-100 p-2 text-xs dark:bg-neutral-900">
@@ -71,7 +85,7 @@ async function DocumentView({ params }: { params: Promise<{ id: string }> }) {
               )}
             </div>
           )}
-          {envelope && run && <ReviewTabs key={run.id} documentId={doc.id} runId={run.id} filename={doc.filename} envelope={envelope}>
+          {envelope && run && <ReviewTabs key={run.id} documentId={doc.id} runId={run.id} filename={doc.filename} envelope={envelope} draft={draft} draftRevision={draft ? draftRow?.updatedAt.toISOString() : undefined}>
             <EnvelopeFields envelope={envelope} />
           </ReviewTabs>}
         </section>
@@ -112,6 +126,7 @@ function EnvelopeFields({ envelope }: { envelope: Envelope }) {
   return (
     <div className="space-y-3 text-sm">
       <p className="text-xs text-neutral-500">overall confidence {(envelope.overall_confidence * 100).toFixed(0)}%</p>
+      {envelope.date_uncertainty && <p className="rounded border border-amber-300 p-2 text-sm dark:border-amber-700">Date needs review: {envelope.date_uncertainty}</p>}
       <dl className="divide-y divide-neutral-100 dark:divide-neutral-900">
         {SCALAR_FIELDS.map((name) => (
           <FieldRow key={name} name={name} field={envelope[name] as Field<unknown>} />
@@ -131,6 +146,11 @@ function EnvelopeFields({ envelope }: { envelope: Envelope }) {
           );
         })}
       </dl>
+      {envelope.document_details && envelope.document_details.length > 0 && <div className="border-t border-neutral-200 pt-3 dark:border-neutral-800">
+        <h3 className="font-semibold">Document details</h3>
+        <p className="mb-2 text-xs text-neutral-500">Model-suggested, not yet evaluated. Check against the document.</p>
+        <dl className="divide-y divide-neutral-100 dark:divide-neutral-900">{envelope.document_details.map((detail, i) => <div key={i} className="py-2"><dt className="text-xs uppercase text-neutral-500">{detail.label}</dt><dd><FieldValue field={detail} /></dd></div>)}</dl>
+      </div>}
       <div>
         <h3 className="text-xs uppercase tracking-wide text-neutral-500">summary (unscored)</h3>
         <p className="mt-1">{envelope.summary}</p>

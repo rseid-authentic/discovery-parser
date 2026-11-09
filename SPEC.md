@@ -2,7 +2,7 @@
 
 ## Goal & resume framing
 
-Build a small, honest document parser for antitrust-discovery material that turns messy PDFs into a typed "envelope" where every field carries provenance (confidence, page, source text). The point is not another OCR demo: it is a measured system with an eval harness, per-field scorers, and cost/latency numbers per model. It demonstrates structured LLM extraction, CDN/object-storage fundamentals, and eval discipline on a domain (e-discovery) with real stakes. README reports our own numbers and cites vendor benchmarks only with caveats.
+Build a small, honest document parser for antitrust-discovery material that makes PDF text available for downstream search and analysis, alongside a typed "envelope" where core fields carry provenance (confidence, page, source text). Text from scans is OCR output, not a guaranteed transcription. A measured eval harness, per-field scorers, and cost/latency numbers support comparisons. The downstream analyzer or ontology is out of scope. README reports our own numbers and cites vendor benchmarks only with caveats.
 
 ## Non-goals
 
@@ -14,7 +14,7 @@ Build a small, honest document parser for antitrust-discovery material that turn
 
 ## v0 scope and definition-of-done
 
-Upload PDF -> Vercel Blob -> text-layer detect -> route -> OpenRouter -> Zod envelope -> Neon -> viewer; eval CLI over ~25 labelled docs.
+Upload PDF -> Vercel Blob -> text-layer detect -> text or OCR route -> OpenRouter -> extracted text + Zod envelope -> Neon -> viewer and JSON export; eval CLI over labelled docs. OCR annotations are best-effort: absent annotations or failed model output leave text unavailable, not proof of an empty document.
 
 - [ ] `pnpm typecheck`, `lint`, `test`, `build` pass with no `.env.local`
 - [ ] Upload route stores PDF in Blob under a content-hashed key and records the `documents` row
@@ -68,7 +68,7 @@ Defined in `src/db/schema.ts`.
 
 ## Envelope schema
 
-Source: `src/lib/schema/envelope.ts`. Every scalar is `Field<T>` = `{value|null, confidence, page, source_text}`; no optional keys (strict JSON-schema modes reject them).
+Source: `src/lib/schema/envelope.ts`. Core scalar fields use `Field<T>` = `{value|null, confidence, page, source_text}`. New calls also return `date_uncertainty` and a small list of evidence-backed `document_details`. New-call output requires these keys; the read schema accepts old runs without them. Details are model suggestions and are not scored. An ambiguous date must retain its visible source text where possible without inventing a normalized date.
 
 Fields: `doc_type`, `title_or_subject`, `doc_date` (YYYY-MM-DD), `author_from`, `recipients_to[]`, `cc[]`, `organizations[]`, `people[]`, `bates_begin`, `bates_end`, `page_count`, `has_privilege_legend`, `has_redactions`, `language`, plus unwrapped `summary` and `overall_confidence`.
 

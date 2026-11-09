@@ -5,6 +5,7 @@ import { requireModel } from "@/lib/models";
 import { analyzeTextLayer } from "@/lib/parse/text-layer";
 import { planRoute } from "@/lib/parse/route";
 import { extractEnvelope, type PdfEngine } from "@/lib/parse/extract";
+import { PROMPT_VERSION } from "@/lib/parse/prompt";
 import { scoreEnvelope } from "@/lib/eval/score-envelope";
 import { printReport, summarize, writeReport, type DocResult } from "@/lib/eval/report";
 import { ensureDocument } from "./lib/documents";
@@ -42,7 +43,7 @@ modelIds.forEach(requireModel);
 const mode = values.mode as "auto" | "text" | "pdf";
 if (!["auto", "text", "pdf"].includes(mode)) throw new Error(`bad --mode ${mode}`);
 const engine = values.engine as PdfEngine | undefined;
-if (engine && !["native", "mistral-ocr", "pdf-text"].includes(engine)) throw new Error(`bad --engine ${engine}`);
+if (engine && !["native", "mistral-ocr", "cloudflare-ai", "pdf-text"].includes(engine)) throw new Error(`bad --engine ${engine}`);
 const runName = values.name ?? `eval-${new Date().toISOString().slice(0, 16)}`;
 
 const samples = loadSamples(values.docs);
@@ -68,9 +69,10 @@ for (const { sample, truth } of labelled) {
     const plan = planRoute(textLayer, { mode, model: modelId, pdfEngine: engine });
     process.stdout.write(`${sample.name} x ${modelId} [${plan.inputMode}${plan.pdfEngine ? "/" + plan.pdfEngine : ""}] ... `);
 
-    let result: DocResult;
+    let r;
+    const started = Date.now();
     try {
-      const r = await extractEnvelope({
+      r = await extractEnvelope({
         model: modelId,
         pdfEngine: plan.pdfEngine,
         source:
@@ -78,71 +80,75 @@ for (const { sample, truth } of labelled) {
             ? { kind: "text", text: textLayer.text }
             : { kind: "pdf", bytes: sample.bytes, filename: `${sample.name}.pdf` },
       });
-      const [run] = await db()
-        .insert(schema.extractionRuns)
-        .values({
-          documentId: doc.id,
-          model: modelId,
-          inputMode: plan.inputMode,
-          pdfEngine: plan.pdfEngine ?? null,
-          promptVersion: r.promptVersion,
-          output: r.envelope ?? safeJson(r.raw),
-          schemaValid: r.schemaValid,
-          error: r.zodError ?? null,
-          inputTokens: r.usage.inputTokens ?? null,
-          outputTokens: r.usage.outputTokens ?? null,
-          costUsd: r.costUsd?.toFixed(8) ?? null,
-          latencyMs: r.latencyMs,
-        })
-        .returning();
-
-      const scores = scoreEnvelope(truth, r.envelope);
-      await db()
-        .insert(schema.evalResults)
-        .values(
-          scores.map((s) => ({
-            evalRunId: evalRun.id,
-            extractionRunId: run.id,
-            field: s.field,
-            expected: s.expected ?? null,
-            actual: s.actual ?? null,
-            scorer: s.scorer,
-            score: s.score,
-            status: s.status,
-          })),
-        );
-
-      result = {
-        model: modelId,
-        doc: sample.name,
-        inputMode: plan.inputMode,
-        pdfEngine: plan.pdfEngine ?? null,
-        schemaValid: r.schemaValid,
-        costUsd: r.costUsd,
-        latencyMs: r.latencyMs,
-        inputTokens: r.usage.inputTokens,
-        outputTokens: r.usage.outputTokens,
-        scores,
-      };
-      const correct = scores.filter((s) => s.status === "correct").length;
-      console.log(`${correct}/${scores.length} fields, ${r.latencyMs}ms, $${(r.costUsd ?? 0).toFixed(4)}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const scores = scoreEnvelope(truth, null);
+      const latencyMs = Date.now() - started;
+      // Provider failures are real eval outcomes. Database failures below must
+      // propagate rather than masquerade as provider failures or a complete run.
+      const [failedRun] = await db().insert(schema.extractionRuns).values({
+        documentId: doc.id, model: modelId, inputMode: plan.inputMode,
+        pdfEngine: plan.pdfEngine ?? null, promptVersion: PROMPT_VERSION, schemaValid: false,
+        error: message, latencyMs,
+      }).returning();
+      await db().insert(schema.evalResults).values(scores.map((s) => ({
+        evalRunId: evalRun.id, extractionRunId: failedRun.id, field: s.field,
+        expected: s.expected ?? null, actual: s.actual ?? null, scorer: s.scorer,
+        score: s.score, status: s.status,
+      })));
+      results.push({ model: modelId, doc: sample.name, inputMode: plan.inputMode, pdfEngine: plan.pdfEngine ?? null, schemaValid: false, costUsd: null, latencyMs, inputTokens: undefined, outputTokens: undefined, scores, error: message });
       console.log(`ERROR ${message}`);
-      result = {
+      continue;
+    }
+
+    const [run] = await db()
+      .insert(schema.extractionRuns)
+      .values({
+        documentId: doc.id,
         model: modelId,
-        doc: sample.name,
         inputMode: plan.inputMode,
         pdfEngine: plan.pdfEngine ?? null,
-        schemaValid: false,
-        costUsd: null,
-        latencyMs: 0,
-        inputTokens: undefined,
-        outputTokens: undefined,
-        scores: scoreEnvelope(truth, null),
-        error: message,
-      };
-    }
+        promptVersion: r.promptVersion,
+        output: r.envelope ?? (r.extractedText ? { raw_output: safeJson(r.raw), extracted_text: r.extractedText } : safeJson(r.raw)),
+        schemaValid: r.schemaValid,
+        error: r.zodError ?? null,
+        inputTokens: r.usage.inputTokens ?? null,
+        outputTokens: r.usage.outputTokens ?? null,
+        costUsd: r.costUsd?.toFixed(8) ?? null,
+        latencyMs: r.latencyMs,
+      })
+      .returning();
+
+    const scores = scoreEnvelope(truth, r.envelope);
+    await db()
+      .insert(schema.evalResults)
+      .values(
+        scores.map((s) => ({
+          evalRunId: evalRun.id,
+          extractionRunId: run.id,
+          field: s.field,
+          expected: s.expected ?? null,
+          actual: s.actual ?? null,
+          scorer: s.scorer,
+          score: s.score,
+          status: s.status,
+        })),
+      );
+
+    const result: DocResult = {
+      model: modelId,
+      doc: sample.name,
+      inputMode: plan.inputMode,
+      pdfEngine: plan.pdfEngine ?? null,
+      schemaValid: r.schemaValid,
+      costUsd: r.costUsd,
+      latencyMs: r.latencyMs,
+      inputTokens: r.usage.inputTokens,
+      outputTokens: r.usage.outputTokens,
+      scores,
+    };
+    const correct = scores.filter((s) => s.status === "correct").length;
+    console.log(`${correct}/${scores.length} fields, ${r.latencyMs}ms, ${r.costUsd === null ? "cost unknown" : `$${r.costUsd.toFixed(4)}`}`);
     results.push(result);
   }
 }

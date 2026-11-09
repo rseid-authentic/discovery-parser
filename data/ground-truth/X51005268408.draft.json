@@ -1,0 +1,73 @@
+{
+  "_meta": {
+    "draft": true,
+    "model": "openai/gpt-6-luna",
+    "source_url": "https://huggingface.co/datasets/jsdnrs/ICDAR2019-SROIE",
+    "notes": "The model omitted the merchant and date. The source date 20-11-17 needs a date-order and year interpretation before it can be finalized. Source: SROIE (Huang et al.), jsdnrs edition, CC BY 4.0. JPEG converted to a PDF. This is a proposed draft, not a complete human review.",
+    "unresolved_fields": [
+      "doc_date"
+    ]
+  },
+  "doc_type": {
+    "value": "invoice",
+    "page": 1,
+    "source_text": "Thank you for your business"
+  },
+  "title_or_subject": {
+    "value": null,
+    "page": null,
+    "source_text": null
+  },
+  "doc_date": {
+    "value": null,
+    "page": 1,
+    "source_text": "20-11-17"
+  },
+  "author_from": {
+    "value": null,
+    "page": null,
+    "source_text": null
+  },
+  "recipients_to": [],
+  "cc": [],
+  "organizations": [
+    {
+      "value": "99 SPEED MART S/B",
+      "page": 1,
+      "source_text": "99 SPEED MART S/B"
+    }
+  ],
+  "people": [],
+  "bates_begin": {
+    "value": null,
+    "page": null,
+    "source_text": null
+  },
+  "bates_end": {
+    "value": null,
+    "page": null,
+    "source_text": null
+  },
+  "page_count": {
+    "value": 1,
+    "page": 1,
+    "source_text": "Page 1 of 1"
+  },
+  "has_privilege_legend": {
+    "value": false,
+    "page": 1,
+    "source_text": null
+  },
+  "has_redactions": {
+    "value": false,
+    "page": 1,
+    "source_text": null
+  },
+  "language": {
+    "value": "en",
+    "page": 1,
+    "source_text": "Thank you for your business"
+  },
+  "summary": "The page appears to be an invoice or similar billing document, with tabular transaction details and amounts. The scan is upside down and portions of the text are difficult to read.",
+  "overall_confidence": 0.59
+}

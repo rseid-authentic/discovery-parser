@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { desc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
+import { routeLabel } from "@/lib/parse/route-label";
 
 export default function RunsPage({ params }: PageProps<"/documents/[id]/runs">) {
   return (
@@ -53,7 +54,7 @@ async function RunsView({ params }: { params: Promise<{ id: string }> }) {
             <tr key={r.id} className="border-b border-neutral-100 align-top dark:border-neutral-900">
               <td className="py-2 pr-4 text-neutral-500">{r.createdAt.toISOString().slice(0, 19).replace("T", " ")}</td>
               <td className="py-2 pr-4 font-mono text-xs">{r.model}</td>
-              <td className="py-2 pr-4">{r.inputMode}{r.pdfEngine ? `/${r.pdfEngine}` : ""}</td>
+              <td className="py-2 pr-4">{routeLabel(r)}</td>
               <td className="py-2 pr-4 font-mono text-xs">{r.promptVersion}</td>
               <td className="py-2 pr-4">{r.schemaValid ? "yes" : <span className="text-red-700">no</span>}</td>
               <td className="py-2 pr-4">{r.inputTokens ?? "?"} / {r.outputTokens ?? "?"}</td>

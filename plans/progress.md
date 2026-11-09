@@ -1,5 +1,40 @@
 # Discovery Parser — Progress
 
+## 2026-11-08: Focused v0 reliability implementation
+
+- Local-only: upload requires a server-side token (missing/short disables it), warns about public/provider exposure, and rejects files over 4 MB or 25 pages before Blob/model operations. Token and page cap are not an aggregate spend limit; retain the configured OpenRouter account cap. Existing deployed code is unchanged.
+- Auto-routing sends a whole PDF to the PDF/OCR path if any page lacks the minimum text threshold; explicit overrides remain. The existing text layer is retained separately on a schema-valid mixed-PDF run. A blank page can trigger OCR; text-layer presence/coverage is not accuracy proof.
+- Invalid extractions no longer receive correct absent-field scores or a document pass. Unknown or partial costs remain unknown; known-cost coverage is reported. Eval provider failures are persisted separately; database failures propagate rather than being described as provider errors.
+- Viewer and export select the same readable success, identify its run, and expose a newer failure. A run-specific JSON export prevents a later run from changing the text behind an already-open viewer. Already-extracted PDF text is kept on an upload's model exception.
+- No automatic duplicate retry, general stale-job recovery, worker/queue, human-review bookmark or automatic difficulty classifier was added. Duplicate failed/missing-file recovery remains manual/deferred; the queue remains v1. No paid calls, production migrations, deployments, or pushes were performed.
+- Verification on Node 24: typecheck, lint, 39 tests and build passed; local HTTP smoke returned 200 for `/` and 401 for an unauthorized upload. Live OCR, deployment, actual Vercel token configuration and a visual browser check remain unverified. A random local upload token was added to `.env.local` without exposing its value.
+
+## 2026-11-08: Red-team and code-review scope reconciliation
+
+- Owner agreed on mixed-page safety, small local route comparisons, a simple human-review flag, and a small diagnostic sample. Prefer whole-document OCR for mixed PDFs as a conservative v0 option; keep original text separately where practical and don't claim OCR is perfect or that an empty page isn't genuinely blank.
+- Independent review overlaps on mixed-page routing, run visibility, and evaluation integrity. Confirmed code currently treats unknown costs as zero and can score absent fields as correct after an extraction failure; address before trusting those reports.
+- Public upload protection is a meaningful demo risk because the deployed endpoint can invoke paid services; plan server-side authorization or disabling public uploads, clear public-data messaging, and a genuine spend bound while retaining read-only viewing.
+- Owner does not want production-engineering tunnel vision in the v0 pass: recover already-extracted text after model failure only if straightforward; defer stale-job recovery, concurrency orchestration, the v1 queue, and a broad new eval system. Keep prior successes visible and avoid silent duplicate paid retries. Owner confirmed a queue is still planned for v1; deferral from v0 is not cancellation.
+- Plans only: no implementation, new paid calls, deployments, deletions, or live-service mutations in this reconciliation. The older code-review pass specifically excludes paid calls/deployment unless separately requested.
+
+## 2026-11-08: Text-first plan and human-review direction
+
+- Owner clarified the parser's primary job is making document text useful for search and a separate downstream agent. Structured core metadata and document-specific suggestions support that; implementing the downstream analyzer or ontology is out of scope.
+- Agreed to preserve the distinction between original PDF text, OCR and candidate vision transcription; text-layer presence alone does not establish accuracy, and mixed documents may have image-only pages. Preserve originals and source/version/page references when actually known.
+- Owner proposed bookmarking material that is too difficult for reliable automated extraction for a human to inspect. This is a proposed workflow: no difficulty detector, bookmark storage/UI, automated cascade, or claim of complete coverage is implemented. Page-level flagging depends on available grounding; otherwise flag the document.
+- Next proposed experiment: one bounded live OCR verification, then roughly 5–10 diverse easy/hard pages comparing original, inherited text, OCR, and actual vision transcription where appropriate. Track omissions/search misses and consequential details as well as layout; independently verify selected snippets rather than treating AI triage or incomplete dataset labels as gold. Review reuse terms and service privacy before sending or publishing samples.
+- No OCR/model calls, deployments, or code changes were made in this planning update. Prior local implementation remains uncommitted; the new OCR route/schema have not been live-verified. The existing public app and Blob must not be assumed private.
+
+## 2026-11-08: Core + details and review loop
+
+- Added backward-compatible saved-run reading and strict new-call output for unscored document-specific details and a date-uncertainty explanation. Prompt instructs the model to preserve ambiguous source dates without guessing.
+- User clarified the primary output is document text for search/downstream agents, with structured fields as supporting data. New text-layer runs retain text; PDF scans request `mistral-ocr` and retain provider file-annotation text when returned. Added a text tab and public JSON export. Old text-layer PDFs can be re-read without an AI call; native-only scan runs require a fresh OCR run. OCR output and provider annotation availability are not guaranteed, and OCR is unverified against a live call.
+- PDF OCR changes model input from native vision to OCR-derived content and adds page charges; existing engine overrides still permit comparison. Parser-backed PDFs default to no automatic repair to avoid re-paying for OCR. Recovered OCR text is retained even when structured output validation fails, when the provider metadata was available; missing text is not evidence the document is empty.
+- Viewer distinguishes text input, requested PDF engines, provider-default unknown, and failures with unknown routes. Requested engine is not verification of provider execution.
+- Review continues to treat proposed drafts as unreviewed; unresolved dates block final export, and final labels with unresolved-field metadata are rejected. Unknown must not be scored as absent.
+- Existing eval CLI makes paid model calls; no saved-run offline scorer, automatic training, or document-specific scoring has been added. Preserve original extraction runs and local browser review progress.
+- Added `plans/independent-review-prompt.md` for a separate read-only review session. New model output schema has not yet been tested against a live provider.
+
 ## Status: Real services wired and deployed; one public PDF parsed locally — visual verification and v0 eval remain
 
 ## Completed
@@ -33,9 +68,16 @@
 - At that time, live services and model details were not yet verified; see subsequent session notes.
 
 ## Session Notes
+### 2026-11-08 — Image-only scan pilot
+- Converted five new SROIE receipt JPEGs and five FATURA synthetic invoice JPEGs into one-page image-only PDFs locally. All ten routed to native-PDF mode and returned schema-valid output with GPT-6 Luna; reported total cost $0.01339515, with no repair retries. This was an exploratory pilot, not a formal eval.
+- All five FATURA invoice dates matched the supplied annotation after normalization. On SROIE, one date was omitted and one was read with the wrong year; the remaining three matched using day-first for numeric dates (one of those dates is ambiguous without that convention). The 2008-versus-2018 mismatch was checked against the image; the model also read TAX INVOICE as FAX INVOICE with 99% confidence.
+- At the time of the pilot the envelope had no invoice totals, addresses, or bounding boxes, so those dataset labels were not scored. The converted PDFs and outputs remain under `/private/tmp/discovery-parser-image-pilot-20261108/` and `/private/tmp/discovery-parser-image-results-20261108/`. Three SROIE receipts and their saved runs were subsequently added to the public viewer, with proposed unreviewed drafts; the remaining pilot results were not added in that step.
+- A separate in-session visual check compared selected date, merchant, and title fields across the five SROIE images: four have corrections or an ambiguous date convention; one looks consistent on the fields inspected. Findings are in `vision-triage.json` in the temporary results folder. This was not blinded or a full-envelope evaluation and does not create human-reviewed ground truth.
+- Standards research found no single universal antitrust schema: sent, received, created, modified, and effective dates are distinct. Agree on definitions for current fields, evidence, and absent versus unknown before finalizing gold labels; avoid inferring custodian or attachment metadata from a PDF alone.
+
 ### 2026-11-08 — UCSF and Kleister pilot
 - Ran three UCSF litigation PDFs (`ffbb0002`, `ffbb0006`, `ffbb0005`) and the three Kleister NDA PDFs from `/Users/marshall/Documents/document-parser-samples/manifest.csv` through GPT-6 Luna sequentially, with no schema-repair retries. All six were schema-valid; reported total cost was $0.007668765.
-- All six were routed through extracted text, including the noisy OCR case; this was not a scan/PDF-route test. Results were saved under `/private/tmp/discovery-parser-six-pilot-20261108/` and source PDFs were not uploaded to public Blob. They are not human-scored ground truth.
+- All six were routed through extracted text, including the noisy OCR case; this was not a scan/PDF-route test. Results were saved under `/private/tmp/discovery-parser-six-pilot-20261108/`. At the owner's request, the six source PDFs and existing runs were subsequently added to the public Blob-backed app; redistribution terms remain unconfirmed. They are not human-scored ground truth.
 - `ffbb0002`'s extracted `FROM:` field is blank while the model selected an author; human review is needed before judging it. NDA party labels and our broader `organizations` field have different semantics and cannot be compared as identical sets.
 - A delegated review-UI cleanup improved long-value wrapping, compact responsive rows, progress feedback, and export guidance without changing browser-local persistence or the evaluator label schema. Typecheck, lint, 18 tests, and build passed; this latest visual revision was not rechecked in a browser.
 

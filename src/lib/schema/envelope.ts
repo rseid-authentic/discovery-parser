@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * The "envelope": document-level metadata shared by every discovery document,
- * regardless of type. Doc-type-specific sub-schemas are v2 (see SPEC.md).
+ * regardless of type. New runs can also include unscored document details.
  *
  * NOTE: the field list below is a DRAFT. The user owns domain judgment and
  * finalizes which fields exist, which are critical, and what counts as a match.
@@ -15,7 +15,7 @@ import { z } from "zod";
 /** Provenance wrapper. Keep this tiny; v2 adds `bbox`. */
 export function field<T extends z.ZodType>(value: T) {
   return z.object({
-    value: value.nullable().describe("The extracted value, or null if absent from the document."),
+    value: value.nullable().describe("The extracted value, or null if absent or not reliably determined."),
     confidence: z
       .number()
       .min(0)
@@ -70,6 +70,20 @@ const bates = z
     "Bates number exactly as printed, preserving prefix, case and leading zeros (e.g. GOOG-DOJ-00123456).",
   );
 
+const documentDetails = z.array(z.object({
+  label: z.string().describe("Short descriptive name for the fact, such as Grand total."),
+  value: z.string().describe("Value as written, including currency or units when shown."),
+  confidence: z.number().min(0).max(1),
+  page: z.number().int().positive().nullable(),
+  source_text: z.string().nullable(),
+}));
+
+export const ExtractedTextSchema = z.object({
+  source: z.enum(["pdf-text-layer", "openrouter-file-parser"]),
+  text: z.string(),
+});
+export type ExtractedText = z.infer<typeof ExtractedTextSchema>;
+
 export const EnvelopeSchema = z.object({
   doc_type: field(z.enum(DOC_TYPES)),
   title_or_subject: field(z.string()).describe("Email subject, memo RE: line, report title, etc."),
@@ -95,10 +109,27 @@ export const EnvelopeSchema = z.object({
     .min(0)
     .max(1)
     .describe("Model's overall confidence 0-1 in the whole envelope."),
+  // Optional when reading legacy runs; new extractions use the strict schema below.
+  date_uncertainty: z.string().nullable().optional(),
+  document_details: documentDetails.optional(),
+  extracted_text: ExtractedTextSchema.optional(),
+  source_text_layer: ExtractedTextSchema.optional(),
+});
+
+/** New calls require these keys; older persisted envelopes remain readable. */
+export const ExtractionEnvelopeSchema = EnvelopeSchema.omit({ extracted_text: true, source_text_layer: true }).extend({
+  date_uncertainty: z.string().nullable().describe("Explain an ambiguous or unreadable document date, or null if none."),
+  document_details: documentDetails.describe("A few important, document-specific facts with evidence; empty if none."),
 });
 
 export type Envelope = z.infer<typeof EnvelopeSchema>;
 export type EnvelopeFieldName = keyof Envelope;
+
+/** Never expose a guessed normalized date as certain when ambiguity is reported. */
+export function normalizeDateUncertainty(envelope: Envelope): Envelope {
+  if (!envelope.date_uncertainty?.trim() || envelope.doc_date.value === null) return envelope;
+  return { ...envelope, doc_date: { ...envelope.doc_date, value: null, confidence: 0 } };
+}
 
 /** JSON Schema (draft 2020-12) in case a tool or model needs it directly. */
 export const envelopeJsonSchema = z.toJSONSchema(EnvelopeSchema);
@@ -125,6 +156,7 @@ export const GroundTruthEnvelopeSchema = z.object({
       generated_at: z.string().optional(),
       source_url: z.string().optional(),
       notes: z.string().optional(),
+      unresolved_fields: z.array(z.string()).optional(),
     })
     .optional(),
   doc_type: gtField(z.enum(DOC_TYPES)),

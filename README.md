@@ -1,6 +1,6 @@
 # discovery-parser
 
-AI parser for antitrust-discovery documents. Upload a PDF, store it on Vercel Blob behind a CDN, detect the text layer, extract a Zod-validated "envelope" (every field with confidence, page and source text) via OpenRouter, save to Neon Postgres, and view it. An eval CLI scores models per field against hand-labelled ground truth and reports accuracy, omitted/invented rates, tokens, cost and latency.
+AI parser for antitrust-discovery documents. Extract text from PDFs for search and downstream analysis, with a Zod-validated metadata envelope and document-specific suggestions. Results are stored in Neon and viewed alongside the original public Vercel Blob PDF. An eval CLI scores core fields against hand-labelled ground truth; OCR/text quality requires separate evaluation.
 
 Status: v0 in progress. Scope, plan and definition-of-done are in [SPEC.md](SPEC.md); decisions in [docs/adr/](docs/adr/).
 
@@ -10,12 +10,14 @@ Requires Node >= 22 and pnpm.
 
 ```bash
 pnpm install
-cp .env.example .env.local   # fill in OpenRouter, Neon, Blob values
+cp .env.example .env.local   # fill in OpenRouter, Neon, Blob and upload token
 pnpm db:push                 # create tables in Neon
 pnpm dev                     # http://localhost:3000
 ```
 
 `pnpm build`, `pnpm typecheck`, `pnpm lint` and `pnpm test` work with no env file.
+
+Uploads are disabled until `UPLOAD_ACCESS_TOKEN` is set to a random secret of at least 32 characters in the server environment. Enter the same token in the upload form; never commit it or expose it as a `NEXT_PUBLIC_` variable. For deployment, configure it separately in the relevant Vercel environments. Public browsing remains available. The token is a simple demo access boundary, not a user account system.
 
 ## Eval
 
@@ -43,7 +45,9 @@ Progress is saved in the current browser, not on the server or across devices. O
 
 ## Environment
 
-See `.env.example`. OpenRouter vars are needed for parsing/eval, `DATABASE_URL` for anything touching the DB, and `BLOB_READ_WRITE_TOKEN` for uploads and `samples:upload`. Browser uploads are limited to 4 MB so they fit within Vercel's function request limit; the sample CLI uploads directly to Blob.
+See `.env.example`. OpenRouter vars are needed for parsing/eval, `DATABASE_URL` for anything touching the DB, and `BLOB_READ_WRITE_TOKEN` for uploads and `samples:upload`. Browser uploads are limited to 4 MB and 25 pages; the sample CLI uploads directly to Blob. Keep an account-level OpenRouter spend limit as a separate backstop: the upload token and per-request cap are not an aggregate spend limit.
+
+**Public demo:** uploaded documents, extracted text, metadata, and JSON exports are publicly accessible. Documents are sent to external processing providers. Upload only public or explicitly approved samples; don't use sensitive discovery material. The previous deployment is unchanged until these local changes are deployed.
 
 ## Results
 

@@ -73,18 +73,10 @@ export function scoreEnvelope(expected: GroundTruthEnvelope, actual: Envelope | 
     }
     const res = actual
       ? scorer(ev, av)
-      : // No envelope at all (schema failure after repair): every field is a schema violation,
-        // except fields the label also says are absent.
-        isEmpty(ev)
-        ? { score: 1, status: "correct" as const }
-        : { score: 0, status: "schema_violation" as const };
+      : { score: 0, status: "schema_violation" as const };
     out.push({ field, scorer: name, expected: ev, actual: av, ...res });
   }
   return out;
-}
-
-function isEmpty(v: unknown): boolean {
-  return v === null || v === undefined || (Array.isArray(v) && v.length === 0);
 }
 
 /** Document pass gate: every critical field correct. */

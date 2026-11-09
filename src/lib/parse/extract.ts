@@ -2,7 +2,8 @@ import { generateText, NoObjectGeneratedError, Output, type ModelMessage } from 
 import { z } from "zod";
 import { openrouter } from "@/lib/openrouter";
 import { estimateCost, type Usage } from "@/lib/models";
-import { EnvelopeSchema, type Envelope } from "@/lib/schema/envelope";
+import { ExtractionEnvelopeSchema, normalizeDateUncertainty, type Envelope, type ExtractedText } from "@/lib/schema/envelope";
+import { parsedFileText } from "./file-text";
 import {
   PROMPT_VERSION,
   SYSTEM_PROMPT,
@@ -11,7 +12,7 @@ import {
   userPromptForText,
 } from "./prompt";
 
-export type PdfEngine = "native" | "mistral-ocr" | "pdf-text";
+export type PdfEngine = "native" | "mistral-ocr" | "cloudflare-ai" | "pdf-text";
 
 export type ExtractSource =
   | { kind: "text"; text: string }
@@ -23,12 +24,13 @@ export type ExtractOptions = {
   model: string;
   /** Only used when source.kind === "pdf". Omit to let OpenRouter pick (native if supported, else mistral-ocr). */
   pdfEngine?: PdfEngine;
-  /** Number of repair attempts after a schema failure. Default 1. */
+  /** Number of repair attempts after a schema failure. Default 0 for parser-backed PDFs, otherwise 1. */
   maxRepairs?: number;
 };
 
 export type ExtractResult = {
   envelope: Envelope | null;
+  extractedText?: ExtractedText;
   /** Raw model text of the final attempt (valid JSON or not). */
   raw: string;
   schemaValid: boolean;
@@ -45,6 +47,7 @@ type Attempt = {
   envelope: Envelope | null;
   zodIssues: string | null;
   usage: Usage;
+  parsedText?: string;
 };
 
 /**
@@ -54,7 +57,8 @@ type Attempt = {
  */
 export async function extractEnvelope(opts: ExtractOptions): Promise<ExtractResult> {
   const started = Date.now();
-  const maxRepairs = opts.maxRepairs ?? 1;
+  // Repeating an OCR request would process and charge for the PDF again.
+  const maxRepairs = opts.maxRepairs ?? (opts.source.kind === "pdf" && opts.pdfEngine !== "native" ? 0 : 1);
 
   const model = openrouter().chat(opts.model, {
     usage: { include: true },
@@ -68,10 +72,14 @@ export async function extractEnvelope(opts: ExtractOptions): Promise<ExtractResu
   const usageTotal: Usage = { inputTokens: 0, outputTokens: 0, reportedCostUsd: undefined };
   let last: Attempt | undefined;
   let attempts = 0;
+  let parsedText: string | undefined;
+  let allCostsReported = true;
 
   for (let i = 0; i <= maxRepairs; i++) {
     attempts++;
-    last = await attemptOnce(model, messages);
+    last = await attemptOnce(model, messages, opts.source.kind === "pdf" && opts.pdfEngine !== "native" ? 0 : 2);
+    parsedText ??= last.parsedText;
+    if (last.usage.reportedCostUsd === undefined) allCostsReported = false;
     addUsage(usageTotal, last.usage);
     if (last.envelope) break;
     if (i < maxRepairs) {
@@ -82,13 +90,19 @@ export async function extractEnvelope(opts: ExtractOptions): Promise<ExtractResu
 
   // `last` is always set: the loop runs at least once.
   const final = last as Attempt;
+  if (!allCostsReported) usageTotal.reportedCostUsd = undefined;
+  const extractedText: ExtractedText | undefined = opts.source.kind === "text"
+    ? { source: "pdf-text-layer", text: opts.source.text }
+    : parsedText ? { source: "openrouter-file-parser", text: parsedText } : undefined;
   return {
-    envelope: final.envelope,
+    envelope: final.envelope ? { ...final.envelope, ...(extractedText ? { extracted_text: extractedText } : {}) } : null,
+    extractedText,
     raw: final.text,
     schemaValid: final.envelope !== null,
     zodError: final.zodIssues ?? undefined,
     usage: usageTotal,
-    costUsd: estimateCost(usageTotal, opts.model),
+    // Token-only estimates omit OCR per-page fees, so do not report an incomplete total.
+    costUsd: opts.source.kind === "pdf" && opts.pdfEngine !== "native" && !allCostsReported ? null : estimateCost(usageTotal, opts.model),
     latencyMs: Date.now() - started,
     attempts,
     promptVersion: PROMPT_VERSION,
@@ -116,19 +130,28 @@ function initialUserMessage(source: ExtractSource): ModelMessage {
 async function attemptOnce(
   model: ReturnType<ReturnType<typeof openrouter>["chat"]>,
   messages: ModelMessage[],
+  maxRetries: number,
 ): Promise<Attempt> {
+  let parsedText: string | undefined;
+  let providerMetadata: unknown;
   try {
     const result = await generateText({
       model,
       instructions: SYSTEM_PROMPT,
       messages,
-      output: Output.object({ schema: EnvelopeSchema, name: "envelope" }),
+      output: Output.object({ schema: ExtractionEnvelopeSchema, name: "envelope" }),
+      onEnd: (event) => {
+        providerMetadata = event.providerMetadata;
+        parsedText = parsedFileText(providerMetadata);
+      },
       temperature: 0,
-      maxRetries: 2, // transient HTTP errors only; the SDK does not retry 4xx
+      maxRetries, // Avoid repeating a potentially charged parser-backed PDF request.
     });
+    parsedText = parsedFileText(result.finalStep.providerMetadata);
     return {
       text: result.text,
-      envelope: result.output,
+      envelope: normalizeDateUncertainty(result.output),
+      parsedText,
       zodIssues: null,
       usage: {
         inputTokens: result.usage.inputTokens,
@@ -145,17 +168,18 @@ async function attemptOnce(
         text,
         envelope: null,
         zodIssues: describeZodIssues(text),
+        parsedText,
         usage: {
           inputTokens: err.usage?.inputTokens,
           outputTokens: err.usage?.outputTokens,
-          // providerMetadata is not available on the error; cost falls back to list price.
-          reportedCostUsd: undefined,
+          reportedCostUsd: openrouterCost(providerMetadata),
         },
       };
     }
     throw err;
   }
 }
+
 
 function describeZodIssues(text: string): string {
   let json: unknown;
@@ -164,7 +188,7 @@ function describeZodIssues(text: string): string {
   } catch {
     return "Response was not parseable JSON.";
   }
-  const parsed = EnvelopeSchema.safeParse(json);
+  const parsed = ExtractionEnvelopeSchema.safeParse(json);
   if (parsed.success) return "Validation passed on re-parse (SDK rejected it).";
   return z.prettifyError(parsed.error);
 }

@@ -9,7 +9,7 @@ export type RouteOptions = {
   mode?: "auto" | InputMode;
   /** Override the model chosen from DEFAULT_TEXT_MODEL / DEFAULT_VISION_MODEL. */
   model?: string;
-  /** PDF engine for pdf mode. Omit = OpenRouter default (native if supported, else mistral-ocr). */
+  /** PDF engine for pdf mode. Defaults to OCR so parsed text can be retained. */
   pdfEngine?: PdfEngine;
 };
 
@@ -28,7 +28,7 @@ export type RoutePlan = {
 export function planRoute(textLayer: TextLayerAnalysis, opts: RouteOptions = {}): RoutePlan {
   const env = openrouterEnv();
   const mode: InputMode =
-    opts.mode && opts.mode !== "auto" ? opts.mode : textLayer.hasTextLayer ? "text" : "pdf";
+    opts.mode && opts.mode !== "auto" ? opts.mode : textLayer.hasTextLayer && textLayer.textPageRatio === 1 ? "text" : "pdf";
 
   if (mode === "text") {
     return {
@@ -44,11 +44,11 @@ export function planRoute(textLayer: TextLayerAnalysis, opts: RouteOptions = {})
   return {
     inputMode: "pdf",
     model: opts.model ?? env.DEFAULT_VISION_MODEL,
-    pdfEngine: opts.pdfEngine,
+    pdfEngine: opts.pdfEngine ?? "mistral-ocr",
     reason:
       opts.mode === "pdf"
         ? "forced pdf mode"
-        : `no usable text layer (${textLayer.avgCharsPerPage.toFixed(0)} chars/page avg)`,
+        : `incomplete or insufficient text layer (${textLayer.textPageRatio * 100}% of pages meet the text threshold)`,
   };
 }
 
@@ -59,8 +59,8 @@ export type RouteResult = {
 };
 
 /** Analyze -> plan -> extract. This is the whole v0 ingest path after storage. */
-export async function runRoute(bytes: Uint8Array, filename: string, opts: RouteOptions = {}): Promise<RouteResult> {
-  const textLayer = await analyzeTextLayer(bytes);
+export async function runRoute(bytes: Uint8Array, filename: string, opts: RouteOptions = {}, analysis?: TextLayerAnalysis): Promise<RouteResult> {
+  const textLayer = analysis ?? await analyzeTextLayer(bytes);
   const plan = planRoute(textLayer, opts);
   const result = await extractEnvelope({
     model: plan.model,
@@ -68,6 +68,11 @@ export async function runRoute(bytes: Uint8Array, filename: string, opts: RouteO
     source:
       plan.inputMode === "text" ? { kind: "text", text: textLayer.text } : { kind: "pdf", bytes, filename },
   });
+
+  // A mixed PDF's existing text remains a separate candidate; it may be incomplete.
+  if (plan.inputMode === "pdf" && result.envelope && textLayer.pages.some((page) => page.trim())) {
+    result.envelope.source_text_layer = { source: "pdf-text-layer", text: textLayer.text };
+  }
 
   // TODO(v1) cascade: escalate to a stronger model when
   //   - result.schemaValid === false after the bounded repair, or

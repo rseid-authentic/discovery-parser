@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { DOC_TYPES, GroundTruthEnvelopeSchema, type Envelope, type Field } from "../lib/schema/envelope";
+import { DOC_TYPES, EnvelopeSchema, GroundTruthEnvelopeSchema, type Envelope, type GroundTruthEnvelope } from "../lib/schema/envelope";
 
 type FieldKey =
   | "doc_type" | "title_or_subject" | "doc_date" | "author_from"
@@ -16,7 +16,7 @@ type ReviewState = Record<FieldKey, ReviewField>;
 const FIELDS: { key: FieldKey; label: string; kind: Kind; help?: string }[] = [
   { key: "doc_type", label: "Document type", kind: "type" },
   { key: "title_or_subject", label: "Title or subject", kind: "text" },
-  { key: "doc_date", label: "Document date", kind: "date", help: "Use YYYY-MM-DD; leave blank if unknown." },
+  { key: "doc_date", label: "Document date", kind: "date", help: "Use YYYY-MM-DD; leave unreviewed if unknown." },
   { key: "author_from", label: "Author or sender", kind: "text" },
   { key: "recipients_to", label: "Recipients", kind: "list" },
   { key: "cc", label: "CC", kind: "list" },
@@ -30,14 +30,14 @@ const FIELDS: { key: FieldKey; label: string; kind: Kind; help?: string }[] = [
   { key: "language", label: "Language", kind: "text", help: "Language code, for example en." },
 ];
 
-export function initialReview(envelope: Envelope): ReviewState {
+export function initialReview(envelope: Envelope, draft?: GroundTruthEnvelope | null): ReviewState {
   return Object.fromEntries(FIELDS.map(({ key, kind }) => {
-    const field = envelope[key];
+    const field = draft ? draft[key] : envelope[key];
     if (kind === "list") {
-      const list = field as Field<string>[];
+      const list = field as Array<{ value: string | null }>;
       return [key, { value: list.map((item) => item.value ?? "").filter(Boolean).join("\n"), page: "", source: "", reviewed: false }];
     }
-    const item = field as Field<string | number | boolean>;
+    const item = field as { value: string | number | boolean | null; page?: number | null; source_text?: string | null };
     return [key, { value: item.value == null ? "" : String(item.value), page: item.page == null ? "" : String(item.page), source: item.source_text ?? "", reviewed: false }];
   })) as ReviewState;
 }
@@ -81,39 +81,68 @@ export function groundTruth(review: ReviewState) {
   return GroundTruthEnvelopeSchema.parse(values);
 }
 
-export function ReviewTabs({ documentId, runId, filename, envelope, children }: {
+export function ReviewTabs({ documentId, runId, filename, envelope, draft, draftRevision, children }: {
   documentId: string;
   runId: string;
   filename: string;
   envelope: Envelope;
+  draft?: GroundTruthEnvelope | null;
+  draftRevision?: string;
   children: ReactNode;
 }) {
-  const [tab, setTab] = useState<"extraction" | "review">("extraction");
+  const [tab, setTab] = useState<"extraction" | "text" | "review">("text");
   const active = "border-neutral-900 text-neutral-900 dark:border-neutral-100 dark:text-neutral-100";
   const inactive = "border-transparent text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200";
   return (
     <div>
       <div role="tablist" aria-label="Document information" className="mb-4 flex gap-5 border-b border-neutral-200 dark:border-neutral-800">
         <button id="extraction-tab" type="button" role="tab" aria-selected={tab === "extraction"} aria-controls="extraction-panel" className={`border-b-2 pb-2 text-sm font-medium ${tab === "extraction" ? active : inactive}`} onClick={() => setTab("extraction")}>Extraction</button>
+        <button id="text-tab" type="button" role="tab" aria-selected={tab === "text"} aria-controls="text-panel" className={`border-b-2 pb-2 text-sm font-medium ${tab === "text" ? active : inactive}`} onClick={() => setTab("text")}>Document text</button>
         <button id="review-tab" type="button" role="tab" aria-selected={tab === "review"} aria-controls="review-panel" className={`border-b-2 pb-2 text-sm font-medium ${tab === "review" ? active : inactive}`} onClick={() => setTab("review")}>Review</button>
       </div>
       {tab === "extraction" ? (
         <div id="extraction-panel" role="tabpanel" aria-labelledby="extraction-tab">{children}</div>
+      ) : tab === "text" ? (
+        <div id="text-panel" role="tabpanel" aria-labelledby="text-tab"><DocumentText documentId={documentId} runId={runId} envelope={envelope} /></div>
       ) : (
-        <div id="review-panel" role="tabpanel" aria-labelledby="review-tab"><GroundTruthReview documentId={documentId} runId={runId} filename={filename} envelope={envelope} /></div>
+        <div id="review-panel" role="tabpanel" aria-labelledby="review-tab"><GroundTruthReview documentId={documentId} runId={runId} filename={filename} envelope={envelope} draft={draft} draftRevision={draftRevision} /></div>
       )}
     </div>
   );
 }
 
-export function GroundTruthReview({ documentId, runId, filename, envelope }: {
+function DocumentText({ documentId, runId, envelope }: { documentId: string; runId: string; envelope: Envelope }) {
+  const [text, setText] = useState(envelope.extracted_text);
+  const [loading, setLoading] = useState(!envelope.extracted_text);
+  useEffect(() => {
+    if (envelope.extracted_text) return;
+    const controller = new AbortController();
+    fetch(`/api/documents/${documentId}/export?runId=${runId}`, { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: unknown) => {
+        const candidate = data && typeof data === "object" && "extraction" in data ? EnvelopeSchema.safeParse(data.extraction) : null;
+        if (candidate?.success) setText(candidate.data.extracted_text);
+      })
+      .catch(() => {})
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [documentId, runId, envelope.extracted_text]);
+  return <div className="space-y-3 text-sm">
+    {loading ? <p className="text-neutral-500">Loading document text…</p> : text ? <><p className="text-neutral-500">{text.source === "pdf-text-layer" ? "Extracted PDF text layer" : "Text returned by the PDF parser (OCR may contain errors)"}. Completeness and reading order are not guaranteed.</p><pre className="max-h-[75vh] overflow-auto whitespace-pre-wrap break-words rounded bg-neutral-100 p-3 dark:bg-neutral-900">{text.text}</pre></> : <p className="text-neutral-500">No document text is available for this run. Image-only PDFs need an OCR run to produce text.</p>}
+    <a className="inline-block underline" href={`/api/documents/${documentId}/export?runId=${runId}`}>Open machine-readable JSON</a>
+  </div>;
+}
+
+export function GroundTruthReview({ documentId, runId, filename, envelope, draft, draftRevision }: {
   documentId: string;
   runId: string;
   filename: string;
   envelope: Envelope;
+  draft?: GroundTruthEnvelope | null;
+  draftRevision?: string;
 }) {
-  const storageKey = `discovery-review:v1:${documentId}:${runId}`;
-  const [review, setReview] = useState(() => initialReview(envelope));
+  const storageKey = `discovery-review:v1:${documentId}:${runId}${draftRevision ? `:draft:${draftRevision}` : ""}`;
+  const [review, setReview] = useState(() => initialReview(envelope, draft));
   const [loaded, setLoaded] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "unavailable">("saved");
   const [error, setError] = useState("");
@@ -121,11 +150,11 @@ export function GroundTruthReview({ documentId, runId, filename, envelope }: {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setReview(loadSaved(storageKey, initialReview(envelope)));
+      setReview(loadSaved(storageKey, initialReview(envelope, draft)));
       setLoaded(true);
     }, 0);
     return () => clearTimeout(timer);
-  }, [storageKey, envelope]);
+  }, [storageKey, envelope, draft]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -144,14 +173,18 @@ export function GroundTruthReview({ documentId, runId, filename, envelope }: {
   }
 
   function updateValue(key: FieldKey, value: string) {
-    // Old model evidence may no longer support a corrected value.
-    update(key, { value, page: "", source: "", reviewed: false });
+    // Preserve the printed date as evidence of the original, not of the interpretation.
+    update(key, key === "doc_date" ? { value, reviewed: false } : { value, page: "", source: "", reviewed: false });
   }
 
   const reviewed = FIELDS.filter(({ key }) => review[key].reviewed).length;
   const sampleName = filename.replace(/\.pdf$/i, "").replace(/[\\/\x00-\x1f]/g, "_");
 
   function exportLabel() {
+    if ((draft?._meta?.unresolved_fields?.includes("doc_date") || envelope.date_uncertainty) && !review.doc_date.value.trim()) {
+      setError("The document date is unresolved. Resolve it before exporting this label; a blank value would be scored as absent.");
+      return;
+    }
     if (reviewed !== FIELDS.length) {
       setError("Mark every field reviewed before exporting a final label.");
       return;
@@ -187,7 +220,9 @@ export function GroundTruthReview({ documentId, runId, filename, envelope }: {
         </div>
         <button type="button" onClick={exportLabel} aria-describedby="review-export-help" className="rounded bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300">Download label</button>
       </div>
-      <p id="review-export-help" className="text-sm text-neutral-600 dark:text-neutral-400">Check each value against the PDF, correct it if needed, then mark it reviewed. Leave unknown values blank.</p>
+      <p id="review-export-help" className="text-sm text-neutral-600 dark:text-neutral-400">Check each value against the PDF, correct it if needed, then mark it reviewed. A blank means confirmed absent in evaluation; if a value is unknown, leave it unreviewed and do not export a final label.</p>
+      {envelope.date_uncertainty && <p className="rounded border border-amber-300 p-2 text-sm dark:border-amber-700">Current extraction date needs review: {envelope.date_uncertainty}</p>}
+      {draft && <div className="rounded border border-amber-300 p-3 text-sm dark:border-amber-700"><p className="font-medium">Proposed draft — not yet reviewed</p><p className="mt-1">This document-level draft may come from a different run. Check it against the PDF; the original extraction remains in the Extraction tab.</p><p className="mt-1 whitespace-pre-wrap">{draft._meta?.notes}</p>{draft._meta?.source_url?.startsWith("https://") && <a className="mt-1 inline-block underline" href={draft._meta.source_url} target="_blank" rel="noreferrer">Source and dataset attribution</a>}</div>}
       <details className="text-xs text-neutral-500">
         <summary className="cursor-pointer hover:text-neutral-800 dark:hover:text-neutral-200">How to use the reviewed label</summary>
         <p className="mt-2">After all fields are reviewed, download <code>{sampleName}.json</code> to <code>data/ground-truth/</code>. The matching <code>{sampleName}.pdf</code> must be in <code>data/samples/</code> for evaluation. Progress is stored only in this browser; the field list is still a draft.</p>
@@ -220,7 +255,7 @@ export function GroundTruthReview({ documentId, runId, filename, envelope }: {
               </div>
               {kind === "list" ? <p id={`help-${key}`} className="mt-1 text-xs text-neutral-500 sm:pl-39">One value per line.</p> : <details className="mt-1 text-xs text-neutral-500 sm:pl-39">
                 <summary className="cursor-pointer">Source details{item.page ? ` · p.${item.page}` : ""}</summary>
-                <p className="mt-1">Model-suggested evidence—check it against the PDF.</p>
+                <p className="mt-1">{key === "doc_date" ? "Original date text may not establish its interpretation; check it against the PDF." : "Suggested evidence—check it against the PDF."}</p>
                 {help && <p className="mt-1">{help}</p>}
                 <div className="mt-2 grid gap-2 sm:grid-cols-[6rem_1fr]">
                   <label>Page<input aria-label={`${label} source page`} type="number" min={1} className={common} value={item.page} onChange={(event) => update(key, { page: event.target.value, reviewed: false })} /></label>

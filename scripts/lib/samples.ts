@@ -41,5 +41,8 @@ export function loadGroundTruth(name: string): GroundTruthEnvelope | null {
   if (parsed.data._meta?.draft) {
     throw new Error(`${path} is still marked _meta.draft: true. Hand-correct it and remove the flag.`);
   }
+  if (parsed.data._meta?.unresolved_fields?.length) {
+    throw new Error(`${path} has unresolved fields. Resolve them before scoring; unknown is not the same as absent.`);
+  }
   return parsed.data;
 }

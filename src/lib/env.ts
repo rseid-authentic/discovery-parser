@@ -40,3 +40,9 @@ function lazy<T extends z.ZodObject>(name: string, schema: T): () => z.infer<T> 
 export const openrouterEnv = lazy("OpenRouter", openrouterSchema);
 export const dbEnv = lazy("database", dbSchema);
 export const blobEnv = lazy("Vercel Blob", blobSchema);
+
+/** Uploads remain disabled when a sufficiently strong server-side secret is absent. */
+export function uploadSecret(): string | null {
+  const value = process.env.UPLOAD_ACCESS_TOKEN;
+  return value && value.length >= 32 ? value : null;
+}

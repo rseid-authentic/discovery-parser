@@ -11,7 +11,7 @@ export default function HomePage() {
       <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
         <h1 className="text-lg font-semibold">Upload a PDF</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          Stored in Vercel Blob, text layer detected, parsed synchronously (v0), then shown beside the original. PDFs must be 4 MB or smaller.
+          Documents and results are public and PDFs are sent to external processing providers. Upload only public or explicitly approved material. PDFs must be 4 MB and 25 pages or less. Uploads require an access token; browsing remains public.
         </p>
         {/* Plain multipart POST to the route handler; no client JS needed in v0. */}
         <form
@@ -20,6 +20,7 @@ export default function HomePage() {
           encType="multipart/form-data"
           className="mt-4 flex flex-wrap items-center gap-3"
         >
+          <label className="text-sm">Upload token <input type="password" name="access_token" required autoComplete="off" className="ml-1 rounded border border-neutral-300 bg-transparent px-2 py-1 dark:border-neutral-700" /></label>
           <input
             type="file"
             name="file"

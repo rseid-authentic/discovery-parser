@@ -24,7 +24,7 @@ export const MIN_TEXT_PAGE_RATIO = 0.5;
 export async function analyzeTextLayer(bytes: Uint8Array): Promise<TextLayerAnalysis> {
   // pdf.js may transfer/detach the buffer it is given; hand it a copy.
   const { totalPages, text } = await extractText(new Uint8Array(bytes), { mergePages: false });
-  const pages = text.map((p) => p.replace(/\s+/g, " ").trim());
+  const pages = text.map((p) => p.trim());
   const counts = pages.map((p) => p.replace(/\s/g, "").length);
   const total = counts.reduce((a, b) => a + b, 0);
   const avgCharsPerPage = totalPages > 0 ? total / totalPages : 0;

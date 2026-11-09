@@ -29,8 +29,9 @@ export type ModelSummary = {
   inventedRate: number;
   schemaViolationRate: number;
   meanFieldAccuracy: number;
-  totalCostUsd: number;
-  costPerDocUsd: number;
+  totalCostUsd: number | null;
+  costPerDocUsd: number | null;
+  knownCostRuns: number;
   p50LatencyMs: number;
   totalInputTokens: number;
   totalOutputTokens: number;
@@ -61,19 +62,21 @@ export function summarize(results: DocResult[]): ModelSummary[] {
     }
     const rate = (st: FieldScore["status"]) =>
       all.length ? all.filter((s) => s.status === st).length / all.length : 0;
-    const costs = rs.map((r) => r.costUsd ?? 0);
+    const costs = rs.flatMap((r) => r.costUsd === null ? [] : [r.costUsd]);
+    const completeCosts = costs.length === rs.length;
     out.push({
       model,
       docs: rs.length,
       schemaValidRate: rs.filter((r) => r.schemaValid).length / rs.length,
-      docPassRate: rs.filter((r) => documentPasses(r.scores)).length / rs.length,
+      docPassRate: rs.filter((r) => r.schemaValid && documentPasses(r.scores)).length / rs.length,
       accuracyByField,
       omittedRate: rate("omitted"),
       inventedRate: rate("invented"),
       schemaViolationRate: rate("schema_violation"),
       meanFieldAccuracy: all.length ? mean(all.map((s) => s.score)) : 0,
-      totalCostUsd: sum(costs),
-      costPerDocUsd: sum(costs) / rs.length,
+      totalCostUsd: completeCosts ? sum(costs) : null,
+      costPerDocUsd: completeCosts ? sum(costs) / rs.length : null,
+      knownCostRuns: costs.length,
       p50LatencyMs: percentile(
         rs.map((r) => r.latencyMs),
         0.5,
@@ -82,12 +85,12 @@ export function summarize(results: DocResult[]): ModelSummary[] {
       totalOutputTokens: sum(rs.map((r) => r.outputTokens ?? 0)),
     });
   }
-  return out.sort((a, b) => b.docPassRate - a.docPassRate || a.costPerDocUsd - b.costPerDocUsd);
+  return out.sort((a, b) => b.docPassRate - a.docPassRate || (a.costPerDocUsd ?? Infinity) - (b.costPerDocUsd ?? Infinity));
 }
 
 export function printReport(summaries: ModelSummary[]): void {
   const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
-  const usd = (x: number) => `$${x.toFixed(4)}`;
+  const usd = (x: number | null) => x === null ? "unknown" : `$${x.toFixed(4)}`;
 
   console.log("\n=== Per-model summary ===");
   console.table(
@@ -101,6 +104,7 @@ export function printReport(summaries: ModelSummary[]): void {
       invented: pct(s.inventedRate),
       violations: pct(s.schemaViolationRate),
       "cost/doc": usd(s.costPerDocUsd),
+      "cost known": `${s.knownCostRuns}/${s.docs}`,
       "p50 ms": s.p50LatencyMs,
     })),
   );

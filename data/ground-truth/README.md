@@ -8,4 +8,6 @@ Drafts: `scripts/bootstrap-labels.ts` (`pnpm eval:bootstrap`) writes `<name>.dra
 
 Rules: dates are `YYYY-MM-DD`; Bates numbers exactly as printed; label what is in the document, not what you infer.
 
+In scored labels, null means confirmed absent, not unknown. If a field is unresolved, keep the label as a draft; labels with `_meta.unresolved_fields` are rejected by the eval loader. Document-specific suggestions and uncertainty notes are not currently scored. The eval CLI reruns model calls and may incur charges; it does not score saved runs offline.
+
 `example.json` is a schema-valid illustration, not tied to a real sample.

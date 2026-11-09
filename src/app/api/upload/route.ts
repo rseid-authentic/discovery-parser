@@ -2,10 +2,14 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { runRoute } from "@/lib/parse/route";
 import { documentKey, putObject, sha256Hex } from "@/lib/storage/blob";
+import { uploadSecret } from "@/lib/env";
+import { timingSafeEqual } from "node:crypto";
+import { analyzeTextLayer } from "@/lib/parse/text-layer";
 
 export const maxDuration = 300; // seconds; Vercel function limit for the synchronous v0 parse
 
 const MAX_BYTES = 4 * 1024 * 1024;
+const MAX_PAGES = 25;
 
 /**
  * v0 ingest, fully synchronous:
@@ -18,11 +22,21 @@ const MAX_BYTES = 4 * 1024 * 1024;
  * runRoute() and writes the extraction_run. See SPEC.md "v1".
  */
 export async function POST(request: Request) {
+  const secret = uploadSecret();
+  if (!secret) return Response.json({ error: "uploads are disabled" }, { status: 503 });
+  const contentLength = Number(request.headers.get("content-length"));
+  if (contentLength > MAX_BYTES + 128 * 1024) return Response.json({ error: "request too large" }, { status: 413 });
   let form: FormData;
   try {
     form = await request.formData();
   } catch {
     return Response.json({ error: "expected multipart form data with a PDF file" }, { status: 400 });
+  }
+  const token = form.get("access_token");
+  const provided = typeof token === "string" ? Buffer.from(token) : Buffer.alloc(0);
+  const expected = Buffer.from(secret);
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const file = form.get("file");
   if (!(file instanceof File)) {
@@ -36,6 +50,15 @@ export async function POST(request: Request) {
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
+  let textLayer;
+  try {
+    textLayer = await analyzeTextLayer(bytes);
+  } catch {
+    return Response.json({ error: "could not read PDF" }, { status: 400 });
+  }
+  if (textLayer.pageCount < 1 || textLayer.pageCount > MAX_PAGES) {
+    return Response.json({ error: `PDF must contain 1–${MAX_PAGES} pages` }, { status: 413 });
+  }
   const sha = sha256Hex(bytes);
   const key = documentKey(sha);
 
@@ -61,7 +84,7 @@ export async function POST(request: Request) {
     .returning();
 
   try {
-    const { textLayer, plan, result } = await runRoute(bytes, doc.filename);
+    const { plan, result } = await runRoute(bytes, doc.filename, {}, textLayer);
 
     await db()
       .insert(schema.extractionRuns)
@@ -71,7 +94,7 @@ export async function POST(request: Request) {
         inputMode: plan.inputMode,
         pdfEngine: plan.pdfEngine ?? null,
         promptVersion: result.promptVersion,
-        output: result.envelope ?? safeJson(result.raw),
+        output: result.envelope ?? (result.extractedText ? { raw_output: safeJson(result.raw), extracted_text: result.extractedText } : safeJson(result.raw)),
         schemaValid: result.schemaValid,
         error: result.zodError ?? null,
         inputTokens: result.usage.inputTokens ?? null,
@@ -99,8 +122,9 @@ export async function POST(request: Request) {
         promptVersion: "n/a",
         schemaValid: false,
         error: message,
+        output: textLayer.pages.some((page) => page.trim()) ? { extracted_text: { source: "pdf-text-layer", text: textLayer.text } } : null,
       });
-    await db().update(schema.documents).set({ status: "failed" }).where(eq(schema.documents.id, doc.id));
+    await db().update(schema.documents).set({ status: "failed", pageCount: textLayer.pageCount, hasTextLayer: textLayer.hasTextLayer }).where(eq(schema.documents.id, doc.id));
   }
 
   return redirectTo(request, `/documents/${doc.id}`);
