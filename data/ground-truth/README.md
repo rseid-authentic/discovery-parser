@@ -10,4 +10,8 @@ Rules: dates are `YYYY-MM-DD`; Bates numbers exactly as printed; label what is i
 
 In scored labels, null means confirmed absent, not unknown. If a field is unresolved, keep the label as a draft; labels with `_meta.unresolved_fields` are rejected by the eval loader. Document-specific suggestions and uncertainty notes are not currently scored. The eval CLI reruns model calls and may incur charges; it does not score saved runs offline.
 
+Model scalar nulls do not distinguish absent from unknown. When both label and model are null, that field is excluded from scoring. Documents with any null critical label are excluded from the pass-rate denominator for every model, including failed extractions; failures on eligible documents count as failures. Schema-valid rate still includes all runs. Empty lists still use set scoring and do not establish that the model actually examined all content.
+
+Field-score coverage can differ by model when one model returns null and another returns a value. Read the scored-field counts alongside accuracy and rates; they are not necessarily comparisons over identical field instances.
+
 `example.json` is a schema-valid illustration, not tied to a real sample.

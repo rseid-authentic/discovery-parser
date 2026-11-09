@@ -54,10 +54,10 @@ async function DocumentsTable() {
   let rows: Awaited<ReturnType<typeof loadRows>>;
   try {
     rows = await loadRows();
-  } catch (err) {
+  } catch {
     return (
       <p className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-        Could not load documents: {err instanceof Error ? err.message : String(err)}
+        Could not load documents. Please try again later.
       </p>
     );
   }

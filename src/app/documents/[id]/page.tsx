@@ -36,6 +36,7 @@ async function DocumentView({ params }: { params: Promise<{ id: string }> }) {
   const parsed = run?.schemaValid ? EnvelopeSchema.safeParse(run.output) : null;
   const envelope: Envelope | null = parsed?.success ? parsed.data : null;
   const failedText = run && !envelope && run.output && typeof run.output === "object" && "extracted_text" in run.output ? ExtractedTextSchema.safeParse(run.output.extracted_text) : null;
+  const failedSource = run && !envelope && run.output && typeof run.output === "object" && "source_text_layer" in run.output ? ExtractedTextSchema.safeParse(run.output.source_text_layer) : null;
   const draftRow = await db().query.groundTruth.findFirst({ where: eq(schema.groundTruth.documentId, id) });
   const draftResult = draftRow ? GroundTruthEnvelopeSchema.safeParse(draftRow.envelope) : null;
   const draft = draftResult?.success && draftResult.data._meta?.draft === true ? draftResult.data : null;
@@ -60,7 +61,7 @@ async function DocumentView({ params }: { params: Promise<{ id: string }> }) {
           {run.outputTokens ?? "?"} out tokens
         </p>
       )}
-      {latest && run && latest.id !== run.id && <p className="rounded border border-amber-300 p-2 text-sm dark:border-amber-700">The latest run did not produce a usable extraction. Showing the earlier successful run. {latest.error ?? "See all runs for details."}</p>}
+      {latest && run && latest.id !== run.id && <p className="rounded border border-amber-300 p-2 text-sm dark:border-amber-700">The latest run did not produce a usable extraction. Showing the earlier successful run. See all runs for details.</p>}
 
       {draft?._meta?.source_url === "https://huggingface.co/datasets/jsdnrs/ICDAR2019-SROIE" && (
         <p className="text-xs text-neutral-500">Source: <a className="underline" href={draft._meta.source_url}>SROIE (Huang et al.), jsdnrs edition</a>, <a className="underline" href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Original JPEG converted to a PDF.</p>
@@ -76,13 +77,8 @@ async function DocumentView({ params }: { params: Promise<{ id: string }> }) {
             <div className="space-y-2 text-sm">
               <p className="text-red-700">Extraction did not produce a schema-valid envelope.</p>
               {failedText?.success && <><p className="text-neutral-500">Document text was recovered despite the failed field extraction. It may contain errors.</p><pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded bg-neutral-100 p-2 dark:bg-neutral-900">{failedText.data.text}</pre></>}
+              {!failedText?.success && failedSource?.success && <><p className="text-neutral-500">Partial PDF text layer recovered despite the failed extraction; it may be incomplete.</p><pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded bg-neutral-100 p-2 dark:bg-neutral-900">{failedSource.data.text}</pre></>}
               <a href={`/api/documents/${doc.id}/export?runId=${run.id}`} className="underline">Open machine-readable JSON</a>
-              {run.error && <pre className="whitespace-pre-wrap rounded bg-neutral-100 p-2 text-xs dark:bg-neutral-900">{run.error}</pre>}
-              {run.output != null && (
-                <pre className="max-h-96 overflow-auto rounded bg-neutral-100 p-2 text-xs dark:bg-neutral-900">
-                  {JSON.stringify(run.output, null, 2)}
-                </pre>
-              )}
             </div>
           )}
           {envelope && run && <ReviewTabs key={run.id} documentId={doc.id} runId={run.id} filename={doc.filename} envelope={envelope} draft={draft} draftRevision={draft ? draftRow?.updatedAt.toISOString() : undefined}>

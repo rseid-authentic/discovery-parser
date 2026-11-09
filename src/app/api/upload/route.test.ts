@@ -17,7 +17,7 @@ vi.mock("@/lib/storage/blob", () => ({ putObject: mocks.put, documentKey: () => 
 vi.mock("@/db", () => ({ db: () => ({
   query: { documents: { findFirst: mocks.findFirst } },
   insert: () => ({ values: (value: unknown) => { mocks.inserted(value); return { returning: async () => [{ id: "new", filename: "test.pdf" }] }; } }),
-  update: () => ({ set: (value: unknown) => { mocks.updated(value); return { where: async () => [] }; } }),
+  update: () => ({ set: (value: unknown) => { mocks.updated(value); return { where: () => Object.assign(Promise.resolve([]), { returning: async () => [{ id: "existing", filename: "test.pdf" }] }) }; } }),
 }), schema: { documents: { sha256: "sha", id: "id" }, extractionRuns: {} } }));
 
 import { POST } from "./route";
@@ -55,7 +55,7 @@ describe("upload boundary", () => {
   });
 
   it("checks the token before redirecting a duplicate and avoids another model call", async () => {
-    mocks.findFirst.mockResolvedValue({ id: "existing" });
+    mocks.findFirst.mockResolvedValue({ id: "existing", publicUrl: "https://example.test/file.pdf", status: "parsed" });
     expect((await POST(request("wrong"))).status).toBe(401);
     const response = await POST(request(token));
     expect(response.status).toBe(303);
@@ -74,6 +74,23 @@ describe("upload boundary", () => {
     expect(mocks.put).toHaveBeenCalledOnce();
     expect(mocks.run).toHaveBeenCalledOnce();
     expect(mocks.updated).toHaveBeenCalledWith(expect.objectContaining({ status: "parsed" }));
+  });
+
+  it("claims a queued sample and starts parsing it", async () => {
+    mocks.findFirst.mockResolvedValue({ id: "existing", filename: "test.pdf", status: "queued", publicUrl: null });
+    mocks.put.mockResolvedValue({ url: "https://example.test/file.pdf" });
+    mocks.run.mockResolvedValue({ plan: { model: "test", inputMode: "text" }, result: { schemaValid: true, envelope: {}, usage: {}, costUsd: 0, latencyMs: 1, promptVersion: "test" } });
+    expect((await POST(request(token))).status).toBe(303);
+    expect(mocks.updated).toHaveBeenCalledWith(expect.objectContaining({ status: "parsing" }));
+    expect(mocks.run).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a mixed text layer when an OCR response is schema invalid", async () => {
+    mocks.findFirst.mockResolvedValue(null);
+    mocks.put.mockResolvedValue({ url: "https://example.test/file.pdf" });
+    mocks.run.mockResolvedValue({ plan: { model: "test", inputMode: "pdf" }, result: { schemaValid: false, envelope: null, raw: "bad", usage: {}, costUsd: null, latencyMs: 1, promptVersion: "test" } });
+    await POST(request(token));
+    expect(mocks.inserted).toHaveBeenLastCalledWith(expect.objectContaining({ output: expect.objectContaining({ source_text_layer: { source: "pdf-text-layer", text: "text" } }) }));
   });
 
   it("preserves extracted text when model processing throws", async () => {

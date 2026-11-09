@@ -17,8 +17,21 @@ describe("evaluation reporting", () => {
     const failed = scoreEnvelope(expected, null);
     expect(failed.every((s) => s.score === 0 && s.status === "schema_violation")).toBe(true);
     expect(documentPasses(failed)).toBe(false);
-    expect(scoreEnvelope(expected, actual).find((s) => s.field === "doc_date")?.status).toBe("correct");
-    expect(summarize([result("failed", null, false)])[0].docPassRate).toBe(0);
+    expect(scoreEnvelope(expected, actual).find((s) => s.field === "doc_date")).toBeUndefined();
+    expect(summarize([result("valid", 0)])[0].docPassRate).toBeNull();
+    expect(summarize([result("failed", null, false)])[0].docPassRate).toBeNull();
+  });
+  it("uses the same label-defined pass cohort across models and counts eligible failures", () => {
+    const eligibleTruth = GroundTruthEnvelopeSchema.parse({ ...source, doc_type: field("email"), doc_date: field("2024-01-01"), bates_begin: field("A1"), bates_end: field("A2") });
+    const success = EnvelopeSchema.parse({ ...source, doc_type: field("email"), doc_date: field("2024-01-01"), bates_begin: field("A1"), bates_end: field("A2") });
+    const good = { ...result("good", 0), scores: scoreEnvelope(eligibleTruth, success) };
+    const fail = { ...result("failed", null, false), scores: scoreEnvelope(eligibleTruth, null) };
+    const rows = summarize([good, result("good", 0), fail, result("failed", null, false)]);
+    const byModel = Object.fromEntries(rows.map((row) => [row.model, row]));
+    expect(byModel.good.docPassRate).toBe(1);
+    expect(byModel.failed.docPassRate).toBe(0);
+    expect(byModel.good.docPassEligible).toBe(1);
+    expect(byModel.failed.docPassEligible).toBe(1);
   });
   it("keeps zero, nonzero, partial and unknown costs distinct", () => {
     const summaries = summarize([result("zero", 0), result("paid", 1), result("partial", 0), result("partial", null), result("unknown", null)]);

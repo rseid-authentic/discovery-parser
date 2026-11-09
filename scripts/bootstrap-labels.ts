@@ -31,6 +31,7 @@ mkdirSync(GROUND_TRUTH_DIR, { recursive: true });
 console.log(`Drafting labels for ${samples.length} sample(s) with ${model}`);
 
 let totalCost = 0;
+let unknownCosts = false;
 for (const sample of samples) {
   const finalPath = join(GROUND_TRUTH_DIR, `${sample.name}.json`);
   const draftPath = join(GROUND_TRUTH_DIR, `${sample.name}.draft.json`);
@@ -44,7 +45,8 @@ for (const sample of samples) {
   }
   process.stdout.write(`${sample.name} ... `);
   const { plan, result } = await runRoute(sample.bytes, `${sample.name}.pdf`, { model });
-  totalCost += result.costUsd ?? 0;
+  if (result.costUsd === null) unknownCosts = true;
+  else totalCost += result.costUsd;
   if (!result.envelope) {
     console.log(`FAILED schema after ${result.attempts} attempt(s): ${result.zodError ?? "unknown"}`);
     continue;
@@ -59,6 +61,6 @@ for (const sample of samples) {
     ...result.envelope,
   };
   writeFileSync(draftPath, JSON.stringify(draft, null, 2) + "\n");
-  console.log(`wrote ${draftPath} (${result.latencyMs}ms, $${(result.costUsd ?? 0).toFixed(4)})`);
+  console.log(`wrote ${draftPath} (${result.latencyMs}ms, ${result.costUsd === null ? "cost unknown" : `$${result.costUsd.toFixed(4)}`})`);
 }
-console.log(`Done. Approx cost $${totalCost.toFixed(4)}.`);
+console.log(`Done. ${unknownCosts ? `Total cost unknown; known costs $${totalCost.toFixed(4)}` : `Approx cost $${totalCost.toFixed(4)}`}.`);

@@ -59,6 +59,8 @@ describe("isoDate", () => {
     expect(normalizeDate("yesterday")).toBeNull();
     expect(isoDate("2021-03-05", "Q1 2021").status).toBe("wrong");
     expect(normalizeDate("2021-13-01")).toBeNull();
+    expect(normalizeDate("2021-02-29")).toBeNull();
+    expect(normalizeDate("2024-02-29")).toBe("2024-02-29");
   });
 });
 

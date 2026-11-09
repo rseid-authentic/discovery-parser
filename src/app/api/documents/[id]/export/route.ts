@@ -18,7 +18,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const parsed = run?.schemaValid ? EnvelopeSchema.safeParse(run.output) : null;
   let extraction = parsed?.success ? parsed.data : null;
   const failedText = run.output && typeof run.output === "object" && "extracted_text" in run.output ? ExtractedTextSchema.safeParse(run.output.extracted_text) : null;
-  let extractedText = extraction?.extracted_text ?? (failedText?.success ? failedText.data : undefined);
+  const failedSource = run.output && typeof run.output === "object" && "source_text_layer" in run.output ? ExtractedTextSchema.safeParse(run.output.source_text_layer) : null;
+  let extractedText = extraction?.extracted_text ?? (failedText?.success ? failedText.data : failedSource?.success ? failedSource.data : undefined);
   // Older text-layer runs predate text retention. Re-read only our public Blob,
   // validate its identity and size, and never call an external model for this.
   if (!extractedText && doc.hasTextLayer && doc.publicUrl && doc.bytes <= 32 * 1024 * 1024) {
@@ -40,5 +41,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
   }
   if (extraction && extractedText) extraction = { ...extraction, extracted_text: extractedText };
-  return Response.json({ document: { id: doc.id, filename: doc.filename, sha256: doc.sha256, pageCount: doc.pageCount }, run: { id: run.id, model: run.model, inputMode: run.inputMode, requestedPdfEngine: run.pdfEngine, promptVersion: run.promptVersion, schemaValid: run.schemaValid }, textAvailable: Boolean(extractedText), extractedText: extractedText ?? null, extraction }, { headers: { "Cache-Control": "no-store" } });
+  const sourceTextLayer = extraction?.source_text_layer ?? (failedSource?.success ? failedSource.data : undefined);
+  return Response.json({ document: { id: doc.id, filename: doc.filename, sha256: doc.sha256, pageCount: doc.pageCount }, run: { id: run.id, model: run.model, inputMode: run.inputMode, requestedPdfEngine: run.pdfEngine, promptVersion: run.promptVersion, schemaValid: run.schemaValid }, textAvailable: Boolean(extractedText), extractedText: extractedText ?? null, sourceTextLayer: sourceTextLayer ?? null, extraction }, { headers: { "Cache-Control": "no-store" } });
 }

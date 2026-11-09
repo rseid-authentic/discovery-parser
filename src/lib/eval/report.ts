@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { documentPasses, SCORED_FIELDS, type FieldScore } from "./score-envelope";
+import { CRITICAL_FIELDS, documentPasses, SCORED_FIELDS, type FieldScore } from "./score-envelope";
 
 /** One document x model outcome, as produced by scripts/eval.ts. */
 export type DocResult = {
@@ -21,9 +21,12 @@ export type ModelSummary = {
   model: string;
   docs: number;
   schemaValidRate: number;
-  docPassRate: number;
+  docPassRate: number | null;
+  docPassEligible: number;
   /** field -> mean score in [0,1] */
   accuracyByField: Record<string, number>;
+  scoredByField: Record<string, number>;
+  scoredFields: number;
   /** field -> rate of each status */
   omittedRate: number;
   inventedRate: number;
@@ -56,20 +59,32 @@ export function summarize(results: DocResult[]): ModelSummary[] {
   for (const [model, rs] of byModel) {
     const all = rs.flatMap((r) => r.scores);
     const accuracyByField: Record<string, number> = {};
+    const scoredByField: Record<string, number> = {};
     for (const f of SCORED_FIELDS) {
       const fs = all.filter((s) => s.field === f);
-      accuracyByField[f] = fs.length ? mean(fs.map((s) => s.score)) : 0;
+      scoredByField[f] = fs.length;
+      if (fs.length) accuracyByField[f] = mean(fs.map((s) => s.score));
     }
     const rate = (st: FieldScore["status"]) =>
       all.length ? all.filter((s) => s.status === st).length / all.length : 0;
     const costs = rs.flatMap((r) => r.costUsd === null ? [] : [r.costUsd]);
     const completeCosts = costs.length === rs.length;
+    // Use the same label-defined cohort for every model, including failed runs.
+    // A null critical label cannot establish whether a null prediction was an
+    // abstention or a correct absence, so exclude that document for all models.
+    const eligible = rs.filter((r) => CRITICAL_FIELDS.every((f) => {
+      const field = r.scores.find((s) => s.field === f);
+      return field && field.expected != null;
+    }));
     out.push({
       model,
       docs: rs.length,
       schemaValidRate: rs.filter((r) => r.schemaValid).length / rs.length,
-      docPassRate: rs.filter((r) => r.schemaValid && documentPasses(r.scores)).length / rs.length,
+      docPassRate: eligible.length ? eligible.filter((r) => r.schemaValid && documentPasses(r.scores)).length / eligible.length : null,
+      docPassEligible: eligible.length,
       accuracyByField,
+      scoredByField,
+      scoredFields: all.length,
       omittedRate: rate("omitted"),
       inventedRate: rate("invented"),
       schemaViolationRate: rate("schema_violation"),
@@ -85,7 +100,7 @@ export function summarize(results: DocResult[]): ModelSummary[] {
       totalOutputTokens: sum(rs.map((r) => r.outputTokens ?? 0)),
     });
   }
-  return out.sort((a, b) => b.docPassRate - a.docPassRate || (a.costPerDocUsd ?? Infinity) - (b.costPerDocUsd ?? Infinity));
+  return out.sort((a, b) => (b.docPassRate ?? -1) - (a.docPassRate ?? -1) || (a.costPerDocUsd ?? Infinity) - (b.costPerDocUsd ?? Infinity));
 }
 
 export function printReport(summaries: ModelSummary[]): void {
@@ -98,8 +113,9 @@ export function printReport(summaries: ModelSummary[]): void {
       model: s.model,
       docs: s.docs,
       "schema ok": pct(s.schemaValidRate),
-      "doc pass": pct(s.docPassRate),
+      "doc pass": s.docPassRate === null ? "n/a" : `${pct(s.docPassRate)} (${s.docPassEligible}/${s.docs})`,
       "field acc": pct(s.meanFieldAccuracy),
+      "fields scored": `${s.scoredFields}/${s.docs * SCORED_FIELDS.length}`,
       omitted: pct(s.omittedRate),
       invented: pct(s.inventedRate),
       violations: pct(s.schemaViolationRate),
@@ -113,7 +129,7 @@ export function printReport(summaries: ModelSummary[]): void {
   const rows: Record<string, Record<string, string>> = {};
   for (const f of SCORED_FIELDS) {
     rows[f] = {};
-    for (const s of summaries) rows[f][shortModel(s.model)] = pct(s.accuracyByField[f] ?? 0);
+    for (const s of summaries) rows[f][shortModel(s.model)] = s.accuracyByField[f] === undefined ? "n/a" : `${pct(s.accuracyByField[f])} (${s.scoredByField[f]}/${s.docs})`;
   }
   console.table(rows);
 }

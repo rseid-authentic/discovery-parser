@@ -158,6 +158,8 @@ const MONTHS: Record<string, number> = {
 
 function ymd(y: number, m: number, d: number): string | null {
   if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1000 || y > 9999) return null;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 

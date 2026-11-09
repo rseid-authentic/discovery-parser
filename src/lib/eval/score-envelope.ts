@@ -56,7 +56,7 @@ function unwrapArray(arr: AnyField[] | null | undefined): unknown[] {
   return arr.map(unwrap).filter((v) => v !== null && v !== undefined);
 }
 
-/** Scores an extracted envelope (or null when extraction failed) against ground truth. */
+/** Scores an extraction, excluding scalar null/null pairs that cannot establish absence. */
 export function scoreEnvelope(expected: GroundTruthEnvelope, actual: Envelope | null): FieldScore[] {
   const out: FieldScore[] = [];
   for (const [field, { scorer, name, kind }] of Object.entries(FIELD_SCORERS)) {
@@ -71,6 +71,9 @@ export function scoreEnvelope(expected: GroundTruthEnvelope, actual: Envelope | 
       ev = unwrap(e as AnyField);
       av = actual ? unwrap(a as AnyField) : null;
     }
+    // Null model values conflate absence with uncertainty, including in old
+    // saved runs. Exclude null/null scalars rather than crediting either claim.
+    if (actual && kind === "scalar" && ev == null && av == null) continue;
     const res = actual
       ? scorer(ev, av)
       : { score: 0, status: "schema_violation" as const };

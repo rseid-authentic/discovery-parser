@@ -26,4 +26,11 @@ describe("document JSON export", () => {
     expect((await failed.json()).run.id).toBe("failed");
     expect((await GET(request("?runId=other"), context)).status).toBe(404);
   });
+  it("exports both OCR and inherited text from a failed mixed-document run", async () => {
+    mocks.runs.mockResolvedValue([{ id: "failed", schemaValid: false, output: { extracted_text: { source: "openrouter-file-parser", text: "OCR" }, source_text_layer: { source: "pdf-text-layer", text: "inherited" } } }]);
+    const response = await GET(new Request(`http://localhost/api/documents/${id}/export`), { params: Promise.resolve({ id }) });
+    const body = await response.json();
+    expect(body.extractedText.text).toBe("OCR");
+    expect(body.sourceTextLayer.text).toBe("inherited");
+  });
 });

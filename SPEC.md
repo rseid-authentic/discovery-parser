@@ -77,8 +77,8 @@ Field list is a draft — owner finalizes before labelling.
 ## Eval methodology
 
 - Per-field scorers (`src/lib/eval/scorers.ts`): normalized dates, exact Bates (case and leading zeros preserved), enum check for doc_type, normalized names, set comparison for list fields.
-- Statuses per field: `correct`, `wrong`, `omitted` (truth has value, model null), `invented` (truth null, model has value), `schema_violation` (no valid envelope).
-- Document pass gate: all critical fields correct. Critical set is owner-defined.
+- Statuses per scored field: `correct`, `wrong`, `omitted` (truth has value, model null), `invented` (truth null, model has value), `schema_violation` (no valid envelope). Scalar null/null is excluded because the model cannot distinguish absence from unknown.
+- Document pass gate: all critical fields correct; documents with a null critical ground-truth value are excluded for every model, including failed extractions. Failures on eligible documents count as failures; schema-valid rate includes all runs. Critical set is owner-defined.
 - Each run records tokens, cost (OpenRouter-reported `usage.cost`, list-price fallback) and latency; reports aggregate per model.
 - `summary` is unscored in v0 (LLM-judge is a v2 option).
 - Docs without non-draft ground truth are skipped.

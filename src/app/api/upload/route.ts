@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { runRoute } from "@/lib/parse/route";
 import { documentKey, putObject, sha256Hex } from "@/lib/storage/blob";
@@ -64,13 +64,22 @@ export async function POST(request: Request) {
 
   // Identical content -> same key, same row. Re-uploading just opens the existing viewer.
   const existing = await db().query.documents.findFirst({ where: eq(schema.documents.sha256, sha) });
-  if (existing) {
+  if (existing && existing.publicUrl && existing.status !== "queued") {
     return redirectTo(request, `/documents/${existing.id}`);
   }
 
   const { url } = await putObject({ key, body: bytes, contentType: "application/pdf" });
 
-  const [doc] = await db()
+  let doc;
+  if (existing) {
+    if (existing.status !== "queued") {
+      await db().update(schema.documents).set({ publicUrl: url, storageKey: key }).where(eq(schema.documents.id, existing.id));
+      return redirectTo(request, `/documents/${existing.id}`);
+    }
+    [doc] = await db().update(schema.documents).set({ publicUrl: url, storageKey: key, status: "parsing" }).where(and(eq(schema.documents.id, existing.id), eq(schema.documents.status, "queued"))).returning();
+    if (!doc) return redirectTo(request, `/documents/${existing.id}`);
+  } else {
+  [doc] = await db()
     .insert(schema.documents)
     .values({
       filename: file.name || "upload.pdf",
@@ -82,6 +91,7 @@ export async function POST(request: Request) {
       status: "parsing",
     })
     .returning();
+  }
 
   try {
     const { plan, result } = await runRoute(bytes, doc.filename, {}, textLayer);
@@ -94,7 +104,7 @@ export async function POST(request: Request) {
         inputMode: plan.inputMode,
         pdfEngine: plan.pdfEngine ?? null,
         promptVersion: result.promptVersion,
-        output: result.envelope ?? (result.extractedText ? { raw_output: safeJson(result.raw), extracted_text: result.extractedText } : safeJson(result.raw)),
+        output: result.envelope ?? { raw_output: safeJson(result.raw), ...(result.extractedText ? { extracted_text: result.extractedText } : {}), ...(textLayer.pages.some((page) => page.trim()) ? { source_text_layer: { source: "pdf-text-layer", text: textLayer.text } } : {}) },
         schemaValid: result.schemaValid,
         error: result.zodError ?? null,
         inputTokens: result.usage.inputTokens ?? null,
@@ -112,7 +122,7 @@ export async function POST(request: Request) {
       })
       .where(eq(schema.documents.id, doc.id));
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    console.error("Document processing failed", err);
     await db()
       .insert(schema.extractionRuns)
       .values({
@@ -121,7 +131,7 @@ export async function POST(request: Request) {
         inputMode: "text",
         promptVersion: "n/a",
         schemaValid: false,
-        error: message,
+        error: "Document processing failed. Please try again later.",
         output: textLayer.pages.some((page) => page.trim()) ? { extracted_text: { source: "pdf-text-layer", text: textLayer.text } } : null,
       });
     await db().update(schema.documents).set({ status: "failed", pageCount: textLayer.pageCount, hasTextLayer: textLayer.hasTextLayer }).where(eq(schema.documents.id, doc.id));

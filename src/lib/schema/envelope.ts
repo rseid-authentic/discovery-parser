@@ -63,6 +63,12 @@ const isoDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "ISO date YYYY-MM-DD")
   .describe("ISO 8601 calendar date, YYYY-MM-DD. Date only, no time.");
 
+const calendarDate = isoDate.refine((value) => {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return year >= 1000 && date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}, "Valid calendar date required");
+
 const bates = z
   .string()
   .min(1)
@@ -118,6 +124,7 @@ export const EnvelopeSchema = z.object({
 
 /** New calls require these keys; older persisted envelopes remain readable. */
 export const ExtractionEnvelopeSchema = EnvelopeSchema.omit({ extracted_text: true, source_text_layer: true }).extend({
+  doc_date: field(calendarDate),
   date_uncertainty: z.string().nullable().describe("Explain an ambiguous or unreadable document date, or null if none."),
   document_details: documentDetails.describe("A few important, document-specific facts with evidence; empty if none."),
 });
@@ -161,7 +168,7 @@ export const GroundTruthEnvelopeSchema = z.object({
     .optional(),
   doc_type: gtField(z.enum(DOC_TYPES)),
   title_or_subject: gtField(z.string()),
-  doc_date: gtField(isoDate),
+  doc_date: gtField(calendarDate),
   author_from: gtField(z.string()),
   recipients_to: z.array(gtField(z.string())),
   cc: z.array(gtField(z.string())),
